@@ -4,15 +4,25 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
-interface ClassItem {
+interface ClassObj {
   id: string;
   class_name: string;
   join_code: string;
-  created_at: string;
-  students?: { id: string; full_name: string }[];
+  teacher_id: string;
 }
 
-interface SubmissionItem {
+interface Stimulus {
+  id: string;
+  theme: string;
+  level: string;
+  title: string;
+  prompt: string;
+  text_options: string[];
+  class_id?: string | null;
+  deadline?: string | null;
+}
+
+interface Submission {
   id: string;
   student_id: string;
   prompt_id: string | null;
@@ -27,774 +37,502 @@ interface SubmissionItem {
   criterion_b_score: number | null;
   criterion_c_score: number | null;
   teacher_feedback: string | null;
+  is_read_by_student: boolean | null;
   created_at: string;
-  profiles?: { full_name: string } | null;
+  profiles?: { full_name: string; email: string } | null;
+  stimuli?: { title: string; theme: string } | null;
 }
+
+const THEMES = ['Sharing the Planet', 'Experiences', 'Identities', 'Social Organization', 'Human Ingenuity'];
+const TEXT_TYPES = ['Speech', 'Essay', 'Blog', 'Proposal', 'Review', 'Article', 'Letter to the editor', 'Diary', 'Brochure/leaflet/pamphlet', 'Official report', 'Set of instructions/guidelines'];
+
+const PRESET_TEMPLATES: Record<string, { title: string; prompt: string }> = {
+  'Sharing the Planet': { title: 'Water Conservation Crisis', prompt: 'Many local residents are ignoring severe summer drought warnings and wasting water on their gardens. Write a text in which you describe the impact of this water shortage and suggest ways community members can conserve water.' },
+  'Experiences': { title: 'The Value of Gap Years', prompt: 'Many students feel pressured to enter university immediately after high school. Write a text in which you describe your perspective on taking a gap year and explain how it fosters personal growth.' },
+  'Identities': { title: 'Mental Health in Schools', prompt: 'Academic perfectionism is taking a severe toll on young people. Write a text emphasizing the importance of prioritizing mental health over grades and persuade your peers to support each other.' },
+  'Social Organization': { title: 'Public Transportation Reform', prompt: 'Traffic congestion around your district has reached unacceptable levels. Write a text arguing for free public transportation for students and explain how this will benefit the city.' },
+  'Human Ingenuity': { title: 'AI in the Classroom', prompt: 'Classrooms are integrating artificial intelligence tools. Write a text discussing how AI should be embraced as a collaborative learning assistant rather than feared.' }
+};
+
+const GRADING_TIPS: Record<string, string> = {
+  'Speech': '• Register should be engaging and direct. Clear address to the audience and persuasive structure.',
+  'Essay': '• Formal, objective register. Clear introduction, structured body paragraphs with topic sentences, and conclusive summary.',
+  'Blog': '• Semi-formal tone, engaging title, direct engagement with readers.',
+  'Proposal': '• Professional and structured layout with headings and clear recommendations.',
+  'Default': '• Check Criterion A (Language), Criterion B (Message), and Criterion C (Conceptual Understanding).'
+};
 
 export default function TeacherPortal() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const [tab, setTab] = useState<'submissions' | 'classes' | 'stimuli'>('submissions');
-
-  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [activeTab, setActiveTab] = useState<'classes' | 'tasks' | 'submissions'>('classes');
+  const [classes, setClasses] = useState<ClassObj[]>([]);
   const [newClassName, setNewClassName] = useState('');
-  const [classMsg, setClassMsg] = useState('');
-
-  const [stimTheme, setStimTheme] = useState('Identities');
-  const [stimLevel, setStimLevel] = useState<'SL' | 'HL'>('SL');
-  const [targetClassId, setTargetClassId] = useState<string>('global');
-  const [stimTitle, setStimTitle] = useState('');
-  const [stimPrompt, setStimPrompt] = useState('');
-  const [stimOption1, setStimOption1] = useState('');
-  const [stimOption2, setStimOption2] = useState('');
-  const [stimOption3, setStimOption3] = useState('');
-  const [stimMsg, setStimMsg] = useState('');
-
-  const [submissions, setSubmissions] = useState<SubmissionItem[]>([]);
+  const [classMembersMap, setClassMembersMap] = useState<{ [id: string]: any[] }>({});
   
-  // Seçilen Öğrenci ve Yazıları
-  const [activeStudent, setActiveStudent] = useState<{ id: string; full_name: string } | null>(null);
-  const [selectedSub, setSelectedSub] = useState<SubmissionItem | null>(null);
+  const [selectedStudentSubmissions, setSelectedStudentSubmissions] = useState<Submission[] | null>(null);
+  const [activeStudentName, setActiveStudentName] = useState<string>('');
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
 
-  const [sliderA, setSliderA] = useState<number>(6);
-  const [sliderB, setSliderB] = useState<number>(6);
-  const [sliderC, setSliderC] = useState<number>(3);
-  const [teacherNote, setTeacherNote] = useState<string>('');
-  const [savingGrade, setSavingGrade] = useState<boolean>(false);
+  const [assignedTasks, setAssignedTasks] = useState<Stimulus[]>([]);
+  const [taskTheme, setTaskTheme] = useState(THEMES[0]);
+  const [taskLevel, setTaskLevel] = useState<'SL' | 'HL'>('SL');
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskPrompt, setTaskPrompt] = useState('');
+  const [taskDeadline, setTaskDeadline] = useState('');
+  const [targetClassId, setTargetClassId] = useState('');
+  const [selectedTextTypes, setSelectedTextTypes] = useState<string[]>(['Speech', 'Essay', 'Blog']);
+
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [selectedSub, setSelectedSub] = useState<Submission | null>(null);
+  const [tScoreA, setTScoreA] = useState<number>(6);
+  const [tScoreB, setTScoreB] = useState<number>(6);
+  const [tScoreC, setTScoreC] = useState<number>(3);
+  const [tFeedback, setTFeedback] = useState('');
+  const [grading, setGrading] = useState(false);
 
   useEffect(() => {
-    checkTeacher();
+    initTeacher();
   }, []);
 
-  const checkTeacher = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        router.push('/auth');
-        return;
+  const initTeacher = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/auth');
+      return;
+    }
+    setUser(user);
+    await loadTeacherData(user.id);
+    setLoading(false);
+  };
+
+  const loadTeacherData = async (teacherId: string) => {
+    const { data: classData } = await supabase.from('classes').select('*').eq('teacher_id', teacherId).order('created_at', { ascending: false });
+    if (classData) {
+      setClasses(classData);
+      if (classData.length > 0 && !targetClassId) setTargetClassId(classData[0].id);
+
+      const memMap: { [id: string]: any[] } = {};
+      for (const cls of classData) {
+        const { data: mems } = await supabase.from('class_members').select('student_id').eq('class_id', cls.id);
+        if (mems && mems.length > 0) {
+          const sIds = mems.map(m => m.student_id);
+          const { data: profs } = await supabase.from('profiles').select('id, full_name, email').in('id', sIds);
+          const profMap = new Map((profs || []).map(p => [p.id, p]));
+          memMap[cls.id] = sIds.map(id => profMap.get(id) || { id, full_name: `Student (${id.slice(0, 6)})`, email: '' });
+        } else {
+          memMap[cls.id] = [];
+        }
       }
-      setUser(session.user);
-
-      const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
-      setProfile(prof || { full_name: session.user.email, role: 'teacher' });
-
-      await loadClassesWithStudents();
-      await loadSubmissions();
-    } catch (err) {
-      console.error('Auth check error:', err);
-    } finally {
-      setLoading(false);
+      setClassMembersMap(memMap);
     }
-  };
 
-  const loadClassesWithStudents = async () => {
-    try {
-      const { data: classData } = await supabase.from('classes').select('*').order('created_at', { ascending: false });
-      if (!classData) return;
-
-      const classesWithStudents = await Promise.all(
-        classData.map(async (c) => {
-          const { data: memberData } = await supabase
-            .from('class_members')
-            .select('student_id, profiles:student_id(id, full_name)')
-            .eq('class_id', c.id);
-
-          const students = memberData ? memberData.map((m: any) => m.profiles).filter(Boolean) : [];
-          return { ...c, students };
-        })
-      );
-
-      setClasses(classesWithStudents);
-    } catch (err) {
-      console.error('Error loading classes:', err);
+    const { data: stimData } = await supabase.from('stimuli').select('*');
+    if (stimData) {
+      setAssignedTasks(stimData.filter(s => s.class_id !== null));
     }
-  };
 
-  const loadSubmissions = async () => {
-    try {
-      const { data } = await supabase
-        .from('submissions')
-        .select('*, profiles:student_id(full_name)')
-        .order('created_at', { ascending: false });
-      if (data) setSubmissions(data);
-    } catch (err) {
-      console.error('Error loading submissions:', err);
-    }
-  };
+    const { data: subData } = await supabase.from('submissions').select('*').order('created_at', { ascending: false });
+    if (subData) {
+      const enhanced = await Promise.all(subData.map(async (sub) => {
+        const { data: p } = await supabase.from('profiles').select('full_name, email').eq('id', sub.student_id).single();
+        return {
+          ...sub,
+          profiles: p || { full_name: `Student (${sub.student_id.slice(0, 6)})`, email: '' }
+        };
+      }));
 
-  const handleSelectStudent = (student: { id: string; full_name: string }) => {
-    setActiveStudent(student);
-    setSelectedSub(null);
-  };
+      enhanced.sort((a, b) => {
+        const aPending = a.criterion_a_score === null ? 1 : 0;
+        const bPending = b.criterion_a_score === null ? 1 : 0;
+        if (aPending !== bPending) return bPending - aPending;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
 
-  const openGradingView = (sub: SubmissionItem) => {
-    setSelectedSub(sub);
-    setSliderA(sub.criterion_a_score ?? sub.ai_score_a ?? 6);
-    setSliderB(sub.criterion_b_score ?? sub.ai_score_b ?? 6);
-    setSliderC(sub.criterion_c_score ?? sub.ai_score_c ?? 3);
-    setTeacherNote(sub.teacher_feedback ?? '');
-  };
-
-  const saveTeacherEvaluation = async () => {
-    if (!selectedSub) return;
-    setSavingGrade(true);
-
-    try {
-      const { error } = await supabase
-        .from('submissions')
-        .update({
-          criterion_a_score: sliderA,
-          criterion_b_score: sliderB,
-          criterion_c_score: sliderC,
-          teacher_feedback: teacherNote,
-        })
-        .eq('id', selectedSub.id);
-
-      if (error) throw error;
-
-      alert('Evaluation and feedback successfully saved & sent to student!');
-      await loadSubmissions();
-      const updatedSub = { ...selectedSub, criterion_a_score: sliderA, criterion_b_score: sliderB, criterion_c_score: sliderC, teacher_feedback: teacherNote };
-      setSelectedSub(updatedSub);
-    } catch (err: any) {
-      alert('Error updating submission: ' + err.message);
-    } finally {
-      setSavingGrade(false);
-    }
-  };
-
-  const handleDeleteSubmission = async (subId: string) => {
-    if (!confirm('Are you sure you want to delete this student submission?')) return;
-    const { error } = await supabase.from('submissions').delete().eq('id', subId);
-    if (error) {
-      alert('Error deleting submission: ' + error.message);
-    } else {
-      loadSubmissions();
-      setSelectedSub(null);
-    }
-  };
-
-  const handleDeleteClass = async (classId: string) => {
-    if (!confirm('Are you sure you want to delete this classroom?')) return;
-    const { error } = await supabase.from('classes').delete().eq('id', classId);
-    if (error) {
-      alert('Error deleting class: ' + error.message);
-    } else {
-      loadClassesWithStudents();
+      setSubmissions(enhanced);
+      if (enhanced.length > 0 && !selectedSub) {
+        setSelectedSub(enhanced[0]);
+        setTScoreA(enhanced[0].criterion_a_score ?? 6);
+        setTScoreB(enhanced[0].criterion_b_score ?? 6);
+        setTScoreC(enhanced[0].criterion_c_score ?? 3);
+        setTFeedback(enhanced[0].teacher_feedback || '');
+      }
     }
   };
 
   const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
-    setClassMsg('');
     if (!newClassName.trim()) return;
-
-    const generatedCode = 'IB-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-
-    const { error } = await supabase.from('classes').insert([
-      { class_name: newClassName.trim(), join_code: generatedCode }
-    ]);
-
+    const generatedJoinCode = 'IB-' + Math.floor(1000 + Math.random() * 9000);
+    // KESİN DÜZELTME: join_code kolonuna doğruca generatedJoinCode değişkeni atanıyor
+    const { error } = await supabase.from('classes').insert([{ teacher_id: user.id, class_name: newClassName.trim(), join_code: generatedJoinCode }]);
     if (error) {
-      setClassMsg('Error creating class: ' + error.message);
+      alert('Error creating class: ' + error.message);
     } else {
-      setClassMsg(`Class "${newClassName}" created with code: ${generatedCode}`);
       setNewClassName('');
-      loadClassesWithStudents();
+      await loadTeacherData(user.id);
     }
   };
 
-  const handleAddStimulus = async (e: React.FormEvent) => {
+  const handleDeleteClass = async (classId: string) => {
+    if (!confirm('Are you sure you want to delete this class?')) return;
+    await supabase.from('classes').delete().eq('id', classId);
+    await loadTeacherData(user.id);
+  };
+
+  const handleCopyCode = (code: string, id: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCodeId(id);
+    setTimeout(() => setCopiedCodeId(null), 2000);
+  };
+
+  const handleInspectStudent = (studentId: string, studentName: string) => {
+    setActiveStudentName(studentName);
+    const studentSubs = submissions.filter(s => s.student_id === studentId);
+    setSelectedStudentSubmissions(studentSubs);
+  };
+
+  const handleJumpToSubmission = (sub: Submission) => {
+    setSelectedStudentSubmissions(null);
+    setActiveTab('submissions');
+    setSelectedSub(sub);
+    setTScoreA(sub.criterion_a_score ?? 6);
+    setTScoreB(sub.criterion_b_score ?? 6);
+    setTScoreC(sub.criterion_c_score ?? 3);
+    setTFeedback(sub.teacher_feedback || '');
+  };
+
+  const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStimMsg('');
-    if (!stimTitle || !stimPrompt || !stimOption1 || !stimOption2 || !stimOption3) {
-      setStimMsg('Please fill in the title, prompt, and all 3 text type options.');
+    if (!taskTitle || !taskPrompt || !targetClassId) {
+      alert('Please fill in all required fields.');
       return;
     }
-
-    const payload: any = {
-      theme: stimTheme,
-      level: stimLevel,
-      title: stimTitle,
-      prompt: stimPrompt,
-      text_options: [stimOption1, stimOption2, stimOption3],
-      created_by: user.id,
-    };
-
-    if (targetClassId !== 'global') {
-      payload.class_id = targetClassId;
-    }
-
-    const { error } = await supabase.from('stimuli').insert([payload]);
+    const { error } = await supabase.from('stimuli').insert([{
+      theme: taskTheme,
+      level: taskLevel,
+      title: taskTitle,
+      prompt: taskPrompt,
+      text_options: selectedTextTypes,
+      class_id: targetClassId,
+      deadline: taskDeadline ? new Date(taskDeadline).toISOString() : null
+    }]);
 
     if (error) {
-      setStimMsg('Error: ' + error.message);
+      alert('Error assigning task: ' + error.message);
     } else {
-      setStimMsg(targetClassId === 'global' ? 'Stimulus added to global library!' : 'Task successfully assigned to the selected class!');
-      setStimTitle('');
-      setStimPrompt('');
-      setStimOption1('');
-      setStimOption2('');
-      setStimOption3('');
+      alert('Task successfully assigned with deadline!');
+      setTaskTitle('');
+      setTaskPrompt('');
+      setTaskDeadline('');
+      await loadTeacherData(user.id);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500 font-medium text-sm">
-        Loading Educator Portal...
-      </div>
-    );
-  }
+  const handleGradeSubmission = async () => {
+    if (!selectedSub) return;
+    setGrading(true);
+    try {
+      const { error } = await supabase.from('submissions').update({
+        criterion_a_score: tScoreA,
+        criterion_b_score: tScoreB,
+        criterion_c_score: tScoreC,
+        teacher_feedback: tFeedback,
+        is_read_by_student: false
+      }).eq('id', selectedSub.id);
+
+      if (error) throw error;
+      alert('Teacher grade and feedback successfully sent to student!');
+      await loadTeacherData(user.id);
+    } catch (err: any) {
+      alert('Error saving grade: ' + err.message);
+    } finally {
+      setGrading(false);
+    }
+  };
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading Teacher Portal...</div>;
+
+  const pendingCount = submissions.filter(s => s.criterion_a_score === null).length;
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col">
-      <header className="border-b border-slate-200 bg-white sticky top-0 z-40 shadow-sm">
+      <header className="border-b bg-white sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-bold text-white shadow-sm">
-              T
-            </div>
-            <span className="font-bold text-slate-900 text-base">Teacher Portal</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-orange-50 text-orange-700 font-mono border border-orange-200">
-              {profile?.full_name || user?.email}
-            </span>
+            <div className="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-bold text-white shadow-sm">T</div>
+            <span className="font-bold">Teacher Portal</span>
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-orange-50 text-orange-700 font-mono border border-orange-200">{user?.email}</span>
           </div>
-
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => { setActiveStudent(null); setSelectedSub(null); setTab('submissions'); }}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                tab === 'submissions' && !activeStudent && !selectedSub ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Submissions ({submissions.length})
+          <div className="flex space-x-3">
+            <button onClick={() => setActiveTab('classes')} className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${activeTab === 'classes' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>Classes ({classes.length})</button>
+            <button onClick={() => setActiveTab('tasks')} className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${activeTab === 'tasks' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>Assign Tasks</button>
+            <button onClick={() => setActiveTab('submissions')} className={`px-4 py-2 rounded-xl text-sm font-semibold relative transition-all ${activeTab === 'submissions' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
+              Submissions &amp; Grading ({submissions.length})
+              {pendingCount > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs">{pendingCount}</span>}
             </button>
-            <button
-              onClick={() => { setActiveStudent(null); setSelectedSub(null); setTab('classes'); }}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                tab === 'classes' && !activeStudent && !selectedSub ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Classes &amp; Students ({classes.length})
-            </button>
-            <button
-              onClick={() => { setActiveStudent(null); setSelectedSub(null); setTab('stimuli'); }}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                tab === 'stimuli' && !activeStudent && !selectedSub ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              + Add Task / Stimulus
-            </button>
-            <button
-              onClick={async () => {
-                await supabase.auth.signOut();
-                router.push('/');
-              }}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-600 hover:text-slate-900 ml-2 bg-white shadow-sm"
-            >
-              Sign Out
-            </button>
+            <button onClick={async () => { await supabase.auth.signOut(); router.push('/'); }} className="px-3 py-1.5 border text-xs bg-white rounded-lg text-slate-600 hover:text-slate-900 shadow-sm">Sign Out</button>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
-        {/* 1. ÖĞRENCİ SEÇİLDİYSE VE BİR YAZI İNCELENİYORSA: ÇİFT SÜTUNLU DEĞERLENDİRME SAYFASI */}
-        {selectedSub && activeStudent ? (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="flex items-center justify-between bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setSelectedSub(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-all"
-                >
-                  ← Back to {activeStudent.full_name}'s Submissions
-                </button>
-                <div>
-                  <h2 className="text-xl font-extrabold text-slate-900">
-                    Evaluating: {activeStudent.full_name}
-                  </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Format: <span className="font-mono text-orange-600 font-bold">{selectedSub.chosen_text_type}</span> • {selectedSub.word_count} words • Submitted on {new Date(selectedSub.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => handleDeleteSubmission(selectedSub.id)}
-                className="px-4 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-semibold text-xs rounded-xl transition-all"
-              >
-                🗑️ Delete Submission
-              </button>
-            </div>
-
-            {/* ÇİFT SÜTUN: SOL METİN, SAĞ AI & ÖĞRETMEN DEĞERLENDİRME */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              <div className="lg:col-span-6 space-y-6">
-                <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4">
-                  <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider">Student's Written Submission</h3>
-                  <div className="p-5 rounded-2xl bg-amber-50/20 border border-slate-300 text-slate-800 text-sm leading-[2.2rem] font-serif whitespace-pre-line max-h-[650px] overflow-y-auto shadow-inner"
-                    style={{
-                      backgroundImage: 'linear-gradient(to bottom, transparent 35px, #e2e8f0 35px)',
-                      backgroundSize: '100% 36px'
-                    }}
-                  >
-                    {selectedSub.content}
-                  </div>
-                </div>
-              </div>
-
-              <div className="lg:col-span-6 space-y-6">
-                {selectedSub.ai_feedback && (
-                  <div className="p-6 rounded-3xl bg-orange-50/60 border border-orange-200 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-black text-orange-700 uppercase tracking-wider">AI Analytical Feedback &amp; Score</h4>
-                      <span className="px-3 py-1 bg-orange-600 text-white rounded-lg text-xs font-bold shadow-xs">
-                        AI Total: {(selectedSub.ai_score_a || 0) + (selectedSub.ai_score_b || 0) + (selectedSub.ai_score_c || 0)} / 30
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-700 whitespace-pre-line leading-relaxed bg-white p-4 rounded-xl border border-orange-200 shadow-xs">
-                      {selectedSub.ai_feedback}
-                    </div>
-                  </div>
-                )}
-
-                <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-lg space-y-6">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                    <h4 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider">Teacher Assessment Sliders</h4>
-                    <span className="px-3.5 py-1.5 bg-slate-900 text-white rounded-xl font-black text-sm shadow-sm">
-                      Total: {sliderA + sliderB + sliderC} / 30
-                    </span>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs font-bold">
-                      <span className="text-slate-700">Criterion A: Language (Grammar &amp; Vocab)</span>
-                      <span className="text-orange-600 text-sm">{sliderA} / 12</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={12}
-                      value={sliderA}
-                      onChange={(e) => setSliderA(Number(e.target.value))}
-                      className="w-full h-2.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-600"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs font-bold">
-                      <span className="text-slate-700">Criterion B: Message (Relevance &amp; Arguments)</span>
-                      <span className="text-orange-600 text-sm">{sliderB} / 12</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={12}
-                      value={sliderB}
-                      onChange={(e) => setSliderB(Number(e.target.value))}
-                      className="w-full h-2.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-600"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs font-bold">
-                      <span className="text-slate-700">Criterion C: Conceptual Understanding</span>
-                      <span className="text-orange-600 text-sm">{sliderC} / 6</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={6}
-                      value={sliderC}
-                      onChange={(e) => setSliderC(Number(e.target.value))}
-                      className="w-full h-2.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-600"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                      Teacher Feedback &amp; Guidance
-                    </label>
-                    <textarea
-                      rows={5}
-                      value={teacherNote}
-                      onChange={(e) => setTeacherNote(e.target.value)}
-                      placeholder="Write constructive guidance for the student..."
-                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 leading-relaxed shadow-sm"
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={savingGrade}
-                    onClick={saveTeacherEvaluation}
-                    className="w-full py-4 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-bold text-xs rounded-2xl shadow-lg shadow-orange-500/20 transition-all disabled:opacity-50"
-                  >
-                    {savingGrade ? 'Saving Evaluation...' : 'Save & Publish Evaluation to Student'}
-                  </button>
-                </div>
-              </div>
-            </div>
+        {pendingCount > 0 && activeTab !== 'submissions' && (
+          <div onClick={() => setActiveTab('submissions')} className="p-4 rounded-3xl bg-amber-500 text-white font-bold text-xs flex items-center justify-between shadow-md cursor-pointer hover:bg-amber-600 transition-all">
+            <span>🔔 You have {pendingCount} new student submission(s) waiting for your review and grading!</span>
+            <span className="underline">Click to Grade Now ➔</span>
           </div>
-        ) : activeStudent ? (
-          /* 2. ÖĞRENCİ SEÇİLDİ ANCAK YAZI SEÇİLMEDİYSE: ÖĞRENCİNİN TÜM YAZILARININ LİSTESİ */
-          <div className="space-y-6 animate-fadeIn">
-            <div className="flex items-center justify-between bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setActiveStudent(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-all"
-                >
-                  ← Back to Classes
-                </button>
-                <div>
-                  <h2 className="text-xl font-extrabold text-slate-900">
-                    Submissions by: {activeStudent.full_name}
-                  </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Select a submission below to inspect and evaluate.</p>
-                </div>
-              </div>
+        )}
+
+        {activeTab === 'classes' ? (
+          <div className="space-y-6">
+            <div className="p-6 bg-white border rounded-3xl space-y-4 shadow-sm">
+              <h3 className="font-bold text-sm text-slate-900">Create New Class</h3>
+              <form onSubmit={handleCreateClass} className="flex gap-3">
+                <input type="text" placeholder="Class Name (e.g. IBDP Year 2 English B)" value={newClassName} onChange={e => setNewClassName(e.target.value)} className="px-4 py-2.5 border rounded-xl text-xs flex-1 bg-slate-50 text-slate-900 focus:outline-none" />
+                <button type="submit" className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all">Create Class</button>
+              </form>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {classes.map(cls => {
+                const members = classMembersMap[cls.id] || [];
+                return (
+                  <div key={cls.id} className="p-6 bg-white border rounded-3xl space-y-4 shadow-sm">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-xl">
+                        <span className="text-xs font-mono font-bold text-orange-800">Code: {cls.join_code}</span>
+                        <button onClick={() => handleCopyCode(cls.join_code, cls.id)} className="text-[10px] font-bold text-orange-600 hover:underline">{copiedCodeId === cls.id ? 'Copied ✓' : 'Copy Code'}</button>
+                      </div>
+                      <button onClick={() => handleDeleteClass(cls.id)} className="text-xs text-rose-600 font-semibold hover:underline">Delete</button>
+                    </div>
+                    <h4 className="font-extrabold text-base text-slate-900">{cls.class_name}</h4>
+                    <div className="pt-3 border-t text-xs space-y-2">
+                      <b>Enrolled Students ({members.length}):</b>
+                      {members.length === 0 ? (
+                        <p className="text-slate-400 italic">No students joined yet.</p>
+                      ) : (
+                        <ul className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                          {members.map((st: any) => (
+                            <li
+                              key={st.id}
+                              onClick={() => handleInspectStudent(st.id, st.full_name || st.email)}
+                              className="bg-slate-50 hover:bg-orange-50 border border-slate-200 p-2.5 rounded-xl flex justify-between items-center cursor-pointer transition-all"
+                            >
+                              <span className="font-semibold text-slate-800">{st.full_name || st.email}</span>
+                              <span className="text-[10px] text-orange-600 font-bold underline">View Work ➔</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
-            {submissions.filter(s => s.student_id === activeStudent.id).length === 0 ? (
-              <div className="p-12 text-center border border-slate-200 rounded-2xl bg-white text-slate-500 text-sm shadow-sm">
-                {activeStudent.full_name} has not submitted any essays yet.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4">
-                {submissions.filter(s => s.student_id === activeStudent.id).map((sub) => {
-                  const isGraded = sub.criterion_a_score !== null || sub.criterion_b_score !== null || sub.criterion_c_score !== null;
-                  const totalTeacher = isGraded ? (sub.criterion_a_score || 0) + (sub.criterion_b_score || 0) + (sub.criterion_c_score || 0) : null;
-
-                  return (
-                    <div key={sub.id} className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm hover:border-slate-300 transition-all flex items-center justify-between gap-4">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-bold text-slate-900 text-base">{sub.chosen_text_type}</span>
-                          <span className="text-xs text-slate-500">({sub.word_count} words)</span>
-                        </div>
-                        <p className="text-xs text-slate-400">Submitted on {new Date(sub.created_at).toLocaleDateString()}</p>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          {isGraded ? (
-                            <span className="text-xs font-bold text-emerald-600">Graded: {totalTeacher}/30</span>
-                          ) : (
-                            <span className="text-xs font-semibold text-amber-600">Needs Review</span>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => openGradingView(sub)}
-                          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all"
-                        >
-                          Inspect &amp; Grade ➔
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        ) : (
-          /* 3. STANDART SEKMELER (Submissions, Classes, Stimuli) */
-          <>
-            {tab === 'submissions' && (
-              <div className="space-y-6">
-                <h2 className="text-xl font-extrabold text-slate-900">Student Essay Submissions</h2>
-                {submissions.length === 0 ? (
-                  <div className="p-12 text-center border border-slate-200 rounded-2xl bg-white text-slate-500 text-sm shadow-sm">
-                    No submissions received yet. Share your class join code with students!
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-4">
-                    {submissions.map((sub) => {
-                      const isGraded = sub.criterion_a_score !== null || sub.criterion_b_score !== null || sub.criterion_c_score !== null;
-                      const totalTeacher = isGraded
-                        ? (sub.criterion_a_score || 0) + (sub.criterion_b_score || 0) + (sub.criterion_c_score || 0)
-                        : null;
-
-                      return (
-                        <div
-                          key={sub.id}
-                          className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm hover:border-slate-300 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
-                        >
-                          <div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-bold text-slate-900 text-base">
-                                {sub.profiles?.full_name || 'Student Candidate'}
-                              </span>
-                              <span className="text-xs text-slate-500 font-mono">({sub.chosen_text_type})</span>
-                            </div>
-                            <p className="text-xs text-slate-500">
-                              {sub.word_count} words • Submitted on {new Date(sub.created_at).toLocaleDateString()}
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            <div className="text-right">
-                              <span className="text-[11px] block text-slate-500">AI Score: {(sub.ai_score_a || 0) + (sub.ai_score_b || 0) + (sub.ai_score_c || 0)}/30</span>
-                              {isGraded ? (
-                                <span className="text-xs font-bold text-emerald-600">Graded: {totalTeacher}/30</span>
-                              ) : (
-                                <span className="text-xs font-semibold text-amber-600">Needs Review</span>
-                              )}
-                            </div>
-
-                            <button
-                              onClick={() => {
-                                const st = { id: sub.student_id, full_name: sub.profiles?.full_name || 'Student' };
-                                setActiveStudent(st);
-                                openGradingView(sub);
-                              }}
-                              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all"
-                            >
-                              {isGraded ? 'Edit Evaluation' : 'Evaluate Work'}
-                            </button>
-
-                            <button
-                              onClick={() => handleDeleteSubmission(sub.id)}
-                              className="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-semibold text-xs rounded-xl transition-all"
-                              title="Delete Submission"
-                            >
-                              🗑️
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {tab === 'classes' && (
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-                <div className="md:col-span-5 p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
-                  <h3 className="text-lg font-bold text-slate-900">Create a New Classroom</h3>
-                  <p className="text-xs text-slate-500">
-                    Generate an automatic join code for your English B students to automatically group their work under your portal.
-                  </p>
-                  {classMsg && (
-                    <div className="p-3 rounded-xl bg-orange-50 border border-orange-200 text-xs text-orange-800">
-                      {classMsg}
-                    </div>
-                  )}
-                  <form onSubmit={handleCreateClass} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                        Class Name
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={newClassName}
-                        onChange={(e) => setNewClassName(e.target.value)}
-                        placeholder="e.g. IBDP Year 1 English B - Period 3"
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      />
-                    </div>
+            {selectedStudentSubmissions && (
+              <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 className="text-base font-extrabold text-slate-900">
+                      Submissions by: {activeStudentName}
+                    </h3>
                     <button
-                      type="submit"
-                      className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all"
+                      onClick={() => setSelectedStudentSubmissions(null)}
+                      className="px-3 py-1 bg-slate-100 rounded-xl text-xs font-bold text-slate-700"
                     >
-                      Generate Classroom &amp; Code
+                      Close ✕
                     </button>
-                  </form>
-                </div>
-
-                <div className="md:col-span-7 space-y-4">
-                  <h3 className="text-lg font-bold text-slate-900">Active Classrooms &amp; Enrolled Students ({classes.length})</h3>
-                  {classes.length === 0 ? (
-                    <div className="p-8 text-center border border-slate-200 rounded-2xl text-xs text-slate-500 bg-white shadow-sm">
-                      No classes created yet.
-                    </div>
+                  </div>
+                  {selectedStudentSubmissions.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-8 text-center">This student has not submitted any essays yet.</p>
                   ) : (
-                    <div className="grid grid-cols-1 gap-4">
-                      {classes.map((c) => (
-                        <div
-                          key={c.id}
-                          className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4"
-                        >
-                          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                            <div>
-                              <h4 className="font-bold text-slate-900 text-base">{c.class_name}</h4>
-                              <span className="text-xs text-slate-500">Created on {new Date(c.created_at).toLocaleDateString()}</span>
+                    <div className="space-y-3">
+                      {selectedStudentSubmissions.map(sub => {
+                        const totalAi = (sub.ai_score_a || 0) + (sub.ai_score_b || 0) + (sub.ai_score_c || 0);
+                        return (
+                          <div
+                            key={sub.id}
+                            onClick={() => handleJumpToSubmission(sub)}
+                            className="p-4 rounded-2xl bg-slate-50 hover:bg-orange-50 border border-slate-200 cursor-pointer space-y-2 transition-all"
+                          >
+                            <div className="flex items-center justify-between text-xs font-bold">
+                              <span className="text-orange-700">{sub.chosen_text_type}</span>
+                              <span className="text-slate-600">{sub.word_count} words • AI Score: {totalAi}/30</span>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <div className="text-right">
-                                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Student Code</span>
-                                <span className="px-3 py-1.5 bg-orange-50 border border-orange-200 rounded-lg text-orange-700 font-mono font-bold text-sm tracking-wider">
-                                  {c.join_code}
-                                </span>
-                              </div>
-                              <button
-                                onClick={() => handleDeleteClass(c.id)}
-                                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-semibold text-xs rounded-xl transition-all"
-                                title="Delete Classroom"
-                              >
-                                🗑️
-                              </button>
-                            </div>
+                            <p className="text-xs font-serif text-slate-800 line-clamp-2">{sub.content}</p>
+                            <span className="text-[11px] text-orange-600 font-bold underline inline-block">Read &amp; Grade This Essay ➔</span>
                           </div>
-
-                          <div>
-                            <h5 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                              Enrolled Students ({c.students?.length || 0})
-                            </h5>
-                            {c.students && c.students.length > 0 ? (
-                              <div className="flex flex-wrap gap-2">
-                                {c.students.map((st: any) => (
-                                  <button
-                                    key={st.id}
-                                    onClick={() => handleSelectStudent(st)}
-                                    className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-orange-50 border border-slate-200 hover:border-orange-300 text-xs font-bold text-slate-800 hover:text-orange-700 flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
-                                    title="Click to view all student's submissions"
-                                  >
-                                    👤 {st.full_name || 'Student'} ➔
-                                  </button>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-xs text-slate-400 italic">No students have joined this class with the code yet.</p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
               </div>
             )}
-
-            {tab === 'stimuli' && (
-              <div className="max-w-2xl mx-auto p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-5">
-                <h3 className="text-lg font-bold text-slate-900">Add Custom Stimulus or Assign Class Task</h3>
-                <p className="text-xs text-slate-500">
-                  Create an original stimulus. Select a specific class to assign it as an official teacher task, which will appear at the very top of your students' screens.
-                </p>
-
-                {stimMsg && (
-                  <div className="p-3 rounded-xl bg-orange-50 border border-orange-200 text-xs text-orange-800">
-                    {stimMsg}
-                  </div>
-                )}
-
-                <form onSubmit={handleAddStimulus} className="space-y-4">
+          </div>
+        ) : activeTab === 'tasks' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div className="lg:col-span-7 p-6 bg-white border rounded-3xl space-y-4 shadow-sm">
+              <h3 className="font-bold text-sm text-slate-900">Assign Task &amp; Stimulus to Class</h3>
+              <form onSubmit={handleSaveTask} className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Target Classroom</label>
+                  <select value={targetClassId} onChange={e => setTargetClassId(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50 text-slate-900">
+                    {classes.map(c => <option key={c.id} value={c.id}>{c.class_name} ({c.join_code})</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Assign To Classroom</label>
-                    <select
-                      value={targetClassId}
-                      onChange={(e) => setTargetClassId(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-medium"
-                    >
-                      <option value="global">Global Library (Practice for Everyone)</option>
-                      {classes.map(c => (
-                        <option key={c.id} value={c.id}>🎯 Class Assignment: {c.class_name} ({c.join_code})</option>
-                      ))}
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Theme</label>
+                    <select value={taskTheme} onChange={e => {
+                      const th = e.target.value;
+                      setTaskTheme(th);
+                      if (PRESET_TEMPLATES[th]) {
+                        setTaskTitle(PRESET_TEMPLATES[th].title);
+                        setTaskPrompt(PRESET_TEMPLATES[th].prompt);
+                      }
+                    }} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50">{THEMES.map(th => <option key={th} value={th}>{th}</option>)}</select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Level</label>
+                    <select value={taskLevel} onChange={e => setTaskLevel(e.target.value as any)} className="w-full p-2.5 border rounded-xl text-xs font-bold bg-slate-50 text-orange-700"><option value="SL">Standard Level (SL)</option><option value="HL">Higher Level (HL)</option></select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Task Title</label>
+                  <input type="text" placeholder="Task Title" value={taskTitle} onChange={e => setTaskTitle(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Task Prompt Scenario</label>
+                  <textarea rows={4} placeholder="Task Prompt Scenario..." value={taskPrompt} onChange={e => setTaskPrompt(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Deadline Date &amp; Time</label>
+                    <input type="datetime-local" value={taskDeadline} onChange={e => setTaskDeadline(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Allowed Text Types</label>
+                    <select onChange={e => {
+                      const val = e.target.value;
+                      if (val && !selectedTextTypes.includes(val)) setSelectedTextTypes([...selectedTextTypes, val]);
+                    }} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50">
+                      <option value="">+ Add Text Type</option>
+                      {TEXT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
+                </div>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {selectedTextTypes.map(t => (
+                    <span key={t} className="px-2 py-1 bg-orange-50 text-orange-800 rounded-lg text-[10px] font-bold border border-orange-200 flex items-center gap-1">
+                      {t} <button type="button" onClick={() => setSelectedTextTypes(selectedTextTypes.filter(x => x !== t))} className="text-rose-600">×</button>
+                    </span>
+                  ))}
+                </div>
+                <button type="submit" className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-md transition-all">Assign Task with Deadline</button>
+              </form>
+            </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Theme</label>
-                      <select
-                        value={stimTheme}
-                        onChange={(e) => setStimTheme(e.target.value)}
-                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"
-                      >
-                        <option value="Identities">Identities</option>
-                        <option value="Experiences">Experiences</option>
-                        <option value="Human Ingenuity">Human Ingenuity</option>
-                        <option value="Social Organization">Social Organization</option>
-                        <option value="Sharing the Planet">Sharing the Planet</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Level</label>
-                      <select
-                        value={stimLevel}
-                        onChange={(e) => setStimLevel(e.target.value as 'SL' | 'HL')}
-                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"
-                      >
-                        <option value="SL">Standard Level (SL)</option>
-                        <option value="HL">Higher Level (HL)</option>
-                      </select>
-                    </div>
+            <div className="lg:col-span-5 space-y-4">
+              <h3 className="font-bold text-sm text-slate-900">💡 Preset Templates by Theme</h3>
+              <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+                {Object.entries(PRESET_TEMPLATES).map(([theme, tmpl]) => (
+                  <div key={theme} onClick={() => { setTaskTheme(theme); setTaskTitle(tmpl.title); setTaskPrompt(tmpl.prompt); }} className="p-4 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-2xl cursor-pointer transition-all space-y-1">
+                    <span className="text-[10px] font-bold text-orange-700 uppercase">{theme}</span>
+                    <h4 className="text-xs font-extrabold text-slate-900">{tmpl.title}</h4>
+                    <p className="text-[11px] text-slate-600 line-clamp-2">{tmpl.prompt}</p>
+                    <span className="text-[10px] text-orange-600 font-bold underline inline-block pt-1">Use as Template ➔</span>
                   </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Title</label>
-                    <input
-                      type="text"
-                      required
-                      value={stimTitle}
-                      onChange={(e) => setStimTitle(e.target.value)}
-                      placeholder="e.g. Urban Farming Initiatives"
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Prompt Scenario</label>
-                    <textarea
-                      rows={4}
-                      required
-                      value={stimPrompt}
-                      onChange={(e) => setStimPrompt(e.target.value)}
-                      placeholder="Write the contextual stimulus scenario here according to IB Paper 1 guidelines..."
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                      3 Prescribed Text Types
-                    </label>
-                    <div className="grid grid-cols-3 gap-3">
-                      <input
-                        type="text"
-                        required
-                        value={stimOption1}
-                        onChange={(e) => setStimOption1(e.target.value)}
-                        placeholder="e.g. Speech"
-                        className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"
-                      />
-                      <input
-                        type="text"
-                        required
-                        value={stimOption2}
-                        onChange={(e) => setStimOption2(e.target.value)}
-                        placeholder="e.g. Article"
-                        className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"
-                      />
-                      <input
-                        type="text"
-                        required
-                        value={stimOption3}
-                        onChange={(e) => setStimOption3(e.target.value)}
-                        placeholder="e.g. Brochure"
-                        className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all"
-                  >
-                    Publish Task / Stimulus
-                  </button>
-                </form>
+                ))}
               </div>
-            )}
-          </>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div className="lg:col-span-4 space-y-3 max-h-[700px] overflow-y-auto pr-2">
+              <h3 className="text-base font-extrabold text-slate-900 mb-2">Student Submissions</h3>
+              {submissions.length === 0 ? (
+                <div className="p-8 text-center bg-white rounded-3xl border text-slate-400 text-xs">No submissions received yet.</div>
+              ) : (
+                submissions.map(sub => {
+                  const totalAi = (sub.ai_score_a || 0) + (sub.ai_score_b || 0) + (sub.ai_score_c || 0);
+                  const isPending = sub.criterion_a_score === null;
+                  const isSelected = selectedSub?.id === sub.id;
+
+                  return (
+                    <div key={sub.id} onClick={() => { setSelectedSub(sub); setTScoreA(sub.criterion_a_score ?? 6); setTScoreB(sub.criterion_b_score ?? 6); setTScoreC(sub.criterion_c_score ?? 3); setTFeedback(sub.teacher_feedback || ''); }} className={`p-4 border rounded-2xl bg-white cursor-pointer relative transition-all ${isSelected ? 'border-orange-600 ring-2 ring-orange-500 shadow-md' : 'border-slate-200 hover:border-slate-300'}`}>
+                      {isPending ? (
+                        <span className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                      ) : (
+                        <span className="absolute top-3 right-3 text-xs font-bold text-emerald-600">✓</span>
+                      )}
+                      <div className="flex justify-between text-xs font-semibold mb-1">
+                        <span className="font-bold text-slate-900">{sub.profiles?.full_name || 'Student'}</span>
+                        <span className="px-2 py-0.5 rounded bg-orange-50 text-orange-700 font-mono border border-orange-200">{sub.chosen_text_type}</span>
+                      </div>
+                      <p className="text-xs text-slate-500">{sub.word_count} words • <span className="font-bold text-orange-700">AI Score: {totalAi}/30</span></p>
+                      {sub.criterion_a_score !== null && <span className="text-[10px] text-emerald-700 font-bold block mt-1">✓ Teacher Graded</span>}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="lg:col-span-8">
+              {selectedSub ? (
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                  <div className="md:col-span-7 p-6 bg-white border border-slate-200 rounded-3xl space-y-4 shadow-xl">
+                    <div className="border-b pb-3 flex justify-between items-center">
+                      <div>
+                        <h3 className="font-extrabold text-slate-900 text-base">{selectedSub.profiles?.full_name}</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">Type: <span className="font-bold text-orange-700">{selectedSub.chosen_text_type}</span> • {selectedSub.word_count} words</p>
+                      </div>
+                      <div className="p-2.5 bg-orange-50 rounded-2xl border border-orange-200 text-center">
+                        <span className="block text-[10px] font-bold text-orange-800 uppercase">AI Score</span>
+                        <span className="text-sm font-black text-slate-900">{(selectedSub.ai_score_a || 0) + (selectedSub.ai_score_b || 0) + (selectedSub.ai_score_c || 0)} / 30</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold text-slate-700 uppercase">AI Feedback & Analysis</span>
+                      <div className="p-3 bg-orange-50/50 rounded-2xl text-[11px] text-slate-700 max-h-36 overflow-y-auto whitespace-pre-line border border-orange-100">{selectedSub.ai_feedback}</div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold text-slate-700 uppercase">Student Essay</span>
+                      <div className="p-4 bg-slate-50 rounded-2xl font-serif text-xs max-h-48 overflow-y-auto whitespace-pre-line text-slate-900 shadow-inner">{selectedSub.content}</div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. A (/12)</label>
+                        <input type="number" min="0" max="12" value={tScoreA} onChange={e => setTScoreA(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. B (/12)</label>
+                        <input type="number" min="0" max="12" value={tScoreB} onChange={e => setTScoreB(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. C (/6)</label>
+                        <input type="number" min="0" max="6" value={tScoreC} onChange={e => setTScoreC(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold" />
+                      </div>
+                    </div>
+
+                    <textarea rows={3} value={tFeedback} onChange={e => setTFeedback(e.target.value)} placeholder="Write your teacher feedback and guidance here..." className="w-full p-3 border rounded-2xl text-xs bg-slate-50 text-slate-900" />
+                    <button onClick={handleGradeSubmission} disabled={grading} className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-2xl shadow-md transition-all">{grading ? 'Saving...' : 'Save & Send Grade to Student'}</button>
+                  </div>
+
+                  <div className="md:col-span-5 p-6 bg-amber-50 border border-amber-200 rounded-3xl space-y-2 self-start">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-amber-900">🎯 IB Grading Guide: {selectedSub.chosen_text_type}</h4>
+                    <p className="text-[11px] text-slate-700 whitespace-pre-line bg-white/70 p-3 rounded-2xl border border-amber-100">{GRADING_TIPS[selectedSub.chosen_text_type] || GRADING_TIPS['Default']}</p>
+                  </div>
+                </div>
+              ) : <div className="p-12 text-center bg-white border rounded-3xl text-xs text-slate-400">Select a submission from the left list to review and grade.</div>}
+            </div>
+          </div>
         )}
       </main>
     </div>
