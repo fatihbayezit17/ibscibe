@@ -25,6 +25,7 @@ interface Stimulus {
 interface Submission {
   id: string;
   student_id: string;
+  class_id?: string | null;
   prompt_id: string | null;
   chosen_text_type: string;
   content: string;
@@ -37,10 +38,19 @@ interface Submission {
   criterion_b_score: number | null;
   criterion_c_score: number | null;
   teacher_feedback: string | null;
+  teacher_highlights?: any[];
   is_read_by_student: boolean | null;
   created_at: string;
   profiles?: { full_name: string; email: string } | null;
   stimuli?: { title: string; theme: string } | null;
+}
+
+interface HighlightItem {
+  id: string;
+  text: string;
+  color: string;
+  category: string;
+  note: string;
 }
 
 const THEMES = ['Sharing the Planet', 'Experiences', 'Identities', 'Social Organization', 'Human Ingenuity'];
@@ -54,18 +64,19 @@ const PRESET_TEMPLATES: Record<string, { title: string; prompt: string }> = {
   'Human Ingenuity': { title: 'AI in the Classroom', prompt: 'Classrooms are integrating artificial intelligence tools. Write a text discussing how AI should be embraced as a collaborative learning assistant rather than feared.' }
 };
 
-const GRADING_TIPS: Record<string, string> = {
-  'Speech': '• Register should be engaging and direct. Clear address to the audience and persuasive structure.',
-  'Essay': '• Formal, objective register. Clear introduction, structured body paragraphs with topic sentences, and conclusive summary.',
-  'Blog': '• Semi-formal tone, engaging title, direct engagement with readers.',
-  'Proposal': '• Professional and structured layout with headings and clear recommendations.',
-  'Default': '• Check Criterion A (Language), Criterion B (Message), and Criterion C (Conceptual Understanding).'
-};
+const HIGHLIGHT_COLORS = [
+  { key: 'yellow', label: 'Vocabulary / Word Choice', bg: 'bg-yellow-200 text-yellow-900 border-yellow-400' },
+  { key: 'red', label: 'Grammar & Mechanics', bg: 'bg-rose-200 text-rose-900 border-rose-400' },
+  { key: 'blue', label: 'Structure & Format', bg: 'bg-sky-200 text-sky-900 border-sky-400' },
+  { key: 'green', label: 'Strong Argument / Good Point', bg: 'bg-emerald-200 text-emerald-900 border-emerald-400' },
+];
 
 export default function TeacherPortal() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
+  const [schoolName, setSchoolName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasEESupervisorAccess, setHasEESupervisorAccess] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'classes' | 'tasks' | 'submissions'>('classes');
   const [classes, setClasses] = useState<ClassObj[]>([]);
@@ -93,6 +104,9 @@ export default function TeacherPortal() {
   const [tFeedback, setTFeedback] = useState('');
   const [grading, setGrading] = useState(false);
 
+  const [highlights, setHighlights] = useState<HighlightItem[]>([]);
+  const [activeHighlightColor, setActiveHighlightColor] = useState<string>('yellow');
+
   useEffect(() => {
     initTeacher();
   }, []);
@@ -100,18 +114,46 @@ export default function TeacherPortal() {
   const initTeacher = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      router.push('/auth');
+      window.location.href = '/auth';
       return;
     }
     setUser(user);
+    await checkSchoolMembership(user.id);
+    await checkEESupervisorAccess(user.id);
     await loadTeacherData(user.id);
     setLoading(false);
   };
 
+  const checkSchoolMembership = async (userId: string) => {
+    const { data: mem } = await supabase
+      .from('school_memberships')
+      .select('school_licenses(school_name)')
+      .eq('user_id', userId)
+      .single();
+
+    if (mem && mem.school_licenses) {
+      setSchoolName((mem.school_licenses as any).school_name);
+    }
+  };
+
+  const checkEESupervisorAccess = async (userId: string) => {
+    const { count } = await supabase
+      .from('extended_essays')
+      .select('*', { count: 'exact', head: true })
+      .eq('supervisor_id', userId);
+
+    if (count && count > 0) {
+      setHasEESupervisorAccess(true);
+    }
+  };
+
   const loadTeacherData = async (teacherId: string) => {
     const { data: classData } = await supabase.from('classes').select('*').eq('teacher_id', teacherId).order('created_at', { ascending: false });
+    
+    let teacherClassIds: string[] = [];
     if (classData) {
       setClasses(classData);
+      teacherClassIds = classData.map(c => c.id);
       if (classData.length > 0 && !targetClassId) setTargetClassId(classData[0].id);
 
       const memMap: { [id: string]: any[] } = {};
@@ -134,8 +176,23 @@ export default function TeacherPortal() {
       setAssignedTasks(stimData.filter(s => s.class_id !== null));
     }
 
-    const { data: subData } = await supabase.from('submissions').select('*').order('created_at', { ascending: false });
-    if (subData) {
+    let subData: any[] = [];
+    if (teacherClassIds.length > 0) {
+      const { data } = await supabase
+        .from('submissions')
+        .select('*')
+        .or(`class_id.in.(${teacherClassIds.join(',')}),class_id.is.null`)
+        .order('created_at', { ascending: false });
+      subData = data || [];
+    } else {
+      const { data } = await supabase
+        .from('submissions')
+        .select('*')
+        .order('created_at', { ascending: false });
+      subData = data || [];
+    }
+
+    if (subData.length > 0) {
       const enhanced = await Promise.all(subData.map(async (sub) => {
         const { data: p } = await supabase.from('profiles').select('full_name, email').eq('id', sub.student_id).single();
         return {
@@ -158,7 +215,10 @@ export default function TeacherPortal() {
         setTScoreB(enhanced[0].criterion_b_score ?? 6);
         setTScoreC(enhanced[0].criterion_c_score ?? 3);
         setTFeedback(enhanced[0].teacher_feedback || '');
+        setHighlights(enhanced[0].teacher_highlights || []);
       }
+    } else {
+      setSubmissions([]);
     }
   };
 
@@ -166,7 +226,6 @@ export default function TeacherPortal() {
     e.preventDefault();
     if (!newClassName.trim()) return;
     const generatedJoinCode = 'IB-' + Math.floor(1000 + Math.random() * 9000);
-    // KESİN DÜZELTME: join_code kolonuna doğruca generatedJoinCode değişkeni atanıyor
     const { error } = await supabase.from('classes').insert([{ teacher_id: user.id, class_name: newClassName.trim(), join_code: generatedJoinCode }]);
     if (error) {
       alert('Error creating class: ' + error.message);
@@ -202,6 +261,7 @@ export default function TeacherPortal() {
     setTScoreB(sub.criterion_b_score ?? 6);
     setTScoreC(sub.criterion_c_score ?? 3);
     setTFeedback(sub.teacher_feedback || '');
+    setHighlights(sub.teacher_highlights || []);
   };
 
   const handleSaveTask = async (e: React.FormEvent) => {
@@ -240,17 +300,37 @@ export default function TeacherPortal() {
         criterion_b_score: tScoreB,
         criterion_c_score: tScoreC,
         teacher_feedback: tFeedback,
+        teacher_highlights: highlights,
         is_read_by_student: false
       }).eq('id', selectedSub.id);
 
       if (error) throw error;
-      alert('Teacher grade and feedback successfully sent to student!');
+      alert('Teacher grade, color highlights and feedback successfully sent to student!');
       await loadTeacherData(user.id);
     } catch (err: any) {
       alert('Error saving grade: ' + err.message);
     } finally {
       setGrading(false);
     }
+  };
+
+  const handleTextHighlightSelection = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) return;
+    const selectedText = selection.toString().trim();
+    if (!selectedText) return;
+
+    const matchedColorObj = HIGHLIGHT_COLORS.find(c => c.key === activeHighlightColor) || HIGHLIGHT_COLORS[0];
+    const newHighlight: HighlightItem = {
+      id: Math.random().toString(36).substring(2, 9),
+      text: selectedText,
+      color: activeHighlightColor,
+      category: matchedColorObj.label,
+      note: ''
+    };
+
+    setHighlights(prev => [...prev, newHighlight]);
+    selection.removeAllRanges();
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading Teacher Portal...</div>;
@@ -264,16 +344,33 @@ export default function TeacherPortal() {
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-bold text-white shadow-sm">T</div>
             <span className="font-bold">Teacher Portal</span>
+            {schoolName && (
+              <span className="text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
+                🏫 {schoolName}
+              </span>
+            )}
             <span className="text-xs px-2.5 py-0.5 rounded-full bg-orange-50 text-orange-700 font-mono border border-orange-200">{user?.email}</span>
           </div>
-          <div className="flex space-x-3">
-            <button onClick={() => setActiveTab('classes')} className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${activeTab === 'classes' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>Classes ({classes.length})</button>
-            <button onClick={() => setActiveTab('tasks')} className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${activeTab === 'tasks' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>Assign Tasks</button>
-            <button onClick={() => setActiveTab('submissions')} className={`px-4 py-2 rounded-xl text-sm font-semibold relative transition-all ${activeTab === 'submissions' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
+          <div className="flex space-x-3 items-center">
+            <button onClick={() => setActiveTab('classes')} className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${activeTab === 'classes' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>Classes ({classes.length})</button>
+            <button onClick={() => setActiveTab('tasks')} className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${activeTab === 'tasks' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>Assign Tasks</button>
+            <button onClick={() => setActiveTab('submissions')} className={`px-4 py-2 rounded-xl text-sm font-semibold relative transition-all cursor-pointer ${activeTab === 'submissions' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
               Submissions &amp; Grading ({submissions.length})
               {pendingCount > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs">{pendingCount}</span>}
             </button>
-            <button onClick={async () => { await supabase.auth.signOut(); router.push('/'); }} className="px-3 py-1.5 border text-xs bg-white rounded-lg text-slate-600 hover:text-slate-900 shadow-sm">Sign Out</button>
+
+            {/* EE Supervisor Workspace Geçiş Butonu (Yalnızca kendisine EE öğrencisi atanmışsa görünür) */}
+            {hasEESupervisorAccess && (
+              <button 
+                onClick={() => router.push('/teacher/ee')} 
+                className="px-3.5 py-2 rounded-xl text-xs font-black bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm cursor-pointer transition-all flex items-center gap-1.5"
+              >
+                <span>EE Supervisor</span>
+                <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-mono">EE</span>
+              </button>
+            )}
+
+            <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/auth'; }} className="px-3 py-1.5 border text-xs bg-white rounded-lg text-slate-600 hover:text-slate-900 shadow-sm cursor-pointer">Sign Out</button>
           </div>
         </div>
       </header>
@@ -292,7 +389,7 @@ export default function TeacherPortal() {
               <h3 className="font-bold text-sm text-slate-900">Create New Class</h3>
               <form onSubmit={handleCreateClass} className="flex gap-3">
                 <input type="text" placeholder="Class Name (e.g. IBDP Year 2 English B)" value={newClassName} onChange={e => setNewClassName(e.target.value)} className="px-4 py-2.5 border rounded-xl text-xs flex-1 bg-slate-50 text-slate-900 focus:outline-none" />
-                <button type="submit" className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all">Create Class</button>
+                <button type="submit" className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer">Create Class</button>
               </form>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -303,9 +400,9 @@ export default function TeacherPortal() {
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-xl">
                         <span className="text-xs font-mono font-bold text-orange-800">Code: {cls.join_code}</span>
-                        <button onClick={() => handleCopyCode(cls.join_code, cls.id)} className="text-[10px] font-bold text-orange-600 hover:underline">{copiedCodeId === cls.id ? 'Copied ✓' : 'Copy Code'}</button>
+                        <button onClick={() => handleCopyCode(cls.join_code, cls.id)} className="text-[10px] font-bold text-orange-600 hover:underline cursor-pointer">{copiedCodeId === cls.id ? 'Copied ✓' : 'Copy Code'}</button>
                       </div>
-                      <button onClick={() => handleDeleteClass(cls.id)} className="text-xs text-rose-600 font-semibold hover:underline">Delete</button>
+                      <button onClick={() => handleDeleteClass(cls.id)} className="text-xs text-rose-600 font-semibold hover:underline cursor-pointer">Delete</button>
                     </div>
                     <h4 className="font-extrabold text-base text-slate-900">{cls.class_name}</h4>
                     <div className="pt-3 border-t text-xs space-y-2">
@@ -341,7 +438,7 @@ export default function TeacherPortal() {
                     </h3>
                     <button
                       onClick={() => setSelectedStudentSubmissions(null)}
-                      className="px-3 py-1 bg-slate-100 rounded-xl text-xs font-bold text-slate-700"
+                      className="px-3 py-1 bg-slate-100 rounded-xl text-xs font-bold text-slate-700 cursor-pointer"
                     >
                       Close ✕
                     </button>
@@ -428,11 +525,11 @@ export default function TeacherPortal() {
                 <div className="flex flex-wrap gap-1 pt-1">
                   {selectedTextTypes.map(t => (
                     <span key={t} className="px-2 py-1 bg-orange-50 text-orange-800 rounded-lg text-[10px] font-bold border border-orange-200 flex items-center gap-1">
-                      {t} <button type="button" onClick={() => setSelectedTextTypes(selectedTextTypes.filter(x => x !== t))} className="text-rose-600">×</button>
+                      {t} <button type="button" onClick={() => setSelectedTextTypes(selectedTextTypes.filter(x => x !== t))} className="text-rose-600 cursor-pointer">×</button>
                     </span>
                   ))}
                 </div>
-                <button type="submit" className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-md transition-all">Assign Task with Deadline</button>
+                <button type="submit" className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer">Assign Task with Deadline</button>
               </form>
             </div>
 
@@ -451,86 +548,176 @@ export default function TeacherPortal() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            <div className="lg:col-span-4 space-y-3 max-h-[700px] overflow-y-auto pr-2">
-              <h3 className="text-base font-extrabold text-slate-900 mb-2">Student Submissions</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className="lg:col-span-3 space-y-2.5 max-h-[75vh] overflow-y-auto pr-1">
+              <h3 className="text-sm font-extrabold text-slate-900 px-1 mb-1">Submissions ({submissions.length})</h3>
               {submissions.length === 0 ? (
-                <div className="p-8 text-center bg-white rounded-3xl border text-slate-400 text-xs">No submissions received yet.</div>
+                <div className="p-6 text-center bg-white rounded-2xl border text-slate-400 text-xs">No submissions yet for your classes.</div>
               ) : (
                 submissions.map(sub => {
-                  const totalAi = (sub.ai_score_a || 0) + (sub.ai_score_b || 0) + (sub.ai_score_c || 0);
                   const isPending = sub.criterion_a_score === null;
                   const isSelected = selectedSub?.id === sub.id;
 
                   return (
-                    <div key={sub.id} onClick={() => { setSelectedSub(sub); setTScoreA(sub.criterion_a_score ?? 6); setTScoreB(sub.criterion_b_score ?? 6); setTScoreC(sub.criterion_c_score ?? 3); setTFeedback(sub.teacher_feedback || ''); }} className={`p-4 border rounded-2xl bg-white cursor-pointer relative transition-all ${isSelected ? 'border-orange-600 ring-2 ring-orange-500 shadow-md' : 'border-slate-200 hover:border-slate-300'}`}>
+                    <div 
+                      key={sub.id} 
+                      onClick={() => { 
+                        setSelectedSub(sub); 
+                        setTScoreA(sub.criterion_a_score ?? 6); 
+                        setTScoreB(sub.criterion_b_score ?? 6); 
+                        setTScoreC(sub.criterion_c_score ?? 3); 
+                        setTFeedback(sub.teacher_feedback || ''); 
+                        setHighlights(sub.teacher_highlights || []);
+                      }} 
+                      className={`p-3.5 border rounded-2xl bg-white cursor-pointer relative transition-all ${isSelected ? 'border-orange-600 ring-2 ring-orange-500 shadow-sm bg-orange-50/30' : 'border-slate-200 hover:border-slate-300'}`}
+                    >
                       {isPending ? (
-                        <span className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                        <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
                       ) : (
-                        <span className="absolute top-3 right-3 text-xs font-bold text-emerald-600">✓</span>
+                        <span className="absolute top-2.5 right-2.5 text-xs font-bold text-emerald-600">✓</span>
                       )}
-                      <div className="flex justify-between text-xs font-semibold mb-1">
-                        <span className="font-bold text-slate-900">{sub.profiles?.full_name || 'Student'}</span>
-                        <span className="px-2 py-0.5 rounded bg-orange-50 text-orange-700 font-mono border border-orange-200">{sub.chosen_text_type}</span>
+                      <div className="font-bold text-xs text-slate-900 truncate pr-4">{sub.profiles?.full_name || 'Student'}</div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
+                        <span className="font-semibold text-orange-700 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">{sub.chosen_text_type}</span>
+                        <span>{sub.word_count}w</span>
                       </div>
-                      <p className="text-xs text-slate-500">{sub.word_count} words • <span className="font-bold text-orange-700">AI Score: {totalAi}/30</span></p>
-                      {sub.criterion_a_score !== null && <span className="text-[10px] text-emerald-700 font-bold block mt-1">✓ Teacher Graded</span>}
                     </div>
                   );
                 })
               )}
             </div>
 
-            <div className="lg:col-span-8">
+            <div className="lg:col-span-9">
               {selectedSub ? (
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                  <div className="md:col-span-7 p-6 bg-white border border-slate-200 rounded-3xl space-y-4 shadow-xl">
-                    <div className="border-b pb-3 flex justify-between items-center">
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                  <div className="xl:col-span-7 p-6 bg-white border border-slate-200 rounded-3xl space-y-5 shadow-xl">
+                    <div className="flex justify-between items-center border-b pb-4">
                       <div>
-                        <h3 className="font-extrabold text-slate-900 text-base">{selectedSub.profiles?.full_name}</h3>
-                        <p className="text-xs text-slate-500 mt-0.5">Type: <span className="font-bold text-orange-700">{selectedSub.chosen_text_type}</span> • {selectedSub.word_count} words</p>
+                        <h3 className="font-black text-base text-slate-900">{selectedSub.profiles?.full_name}</h3>
+                        <p className="text-xs text-slate-500">Task Type: <span className="font-bold text-orange-700">{selectedSub.chosen_text_type}</span> • Total Words: <b>{selectedSub.word_count}</b></p>
                       </div>
-                      <div className="p-2.5 bg-orange-50 rounded-2xl border border-orange-200 text-center">
-                        <span className="block text-[10px] font-bold text-orange-800 uppercase">AI Score</span>
-                        <span className="text-sm font-black text-slate-900">{(selectedSub.ai_score_a || 0) + (selectedSub.ai_score_b || 0) + (selectedSub.ai_score_c || 0)} / 30</span>
+                      <div className="px-3 py-1.5 bg-orange-50 rounded-2xl border border-orange-200 text-center">
+                        <span className="block text-[9px] font-bold text-orange-800 uppercase">AI Score</span>
+                        <span className="text-xs font-black text-slate-900">{(selectedSub.ai_score_a || 0) + (selectedSub.ai_score_b || 0) + (selectedSub.ai_score_c || 0)} / 30</span>
                       </div>
                     </div>
 
-                    <div className="space-y-1">
-                      <span className="text-xs font-bold text-slate-700 uppercase">AI Feedback & Analysis</span>
-                      <div className="p-3 bg-orange-50/50 rounded-2xl text-[11px] text-slate-700 max-h-36 overflow-y-auto whitespace-pre-line border border-orange-100">{selectedSub.ai_feedback}</div>
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Highlight Palette (Select text to mark):</span>
+                        <span className="text-[10px] text-slate-400 italic">Highlight active color below</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {HIGHLIGHT_COLORS.map(col => (
+                          <button
+                            key={col.key}
+                            type="button"
+                            onClick={() => setActiveHighlightColor(col.key)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${col.bg} ${activeHighlightColor === col.key ? 'ring-2 ring-slate-900 shadow-xs scale-105' : 'opacity-80 hover:opacity-100'}`}
+                          >
+                            <span className="w-2.5 h-2.5 rounded-full bg-current inline-block" />
+                            {col.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
-                    <div className="space-y-1">
-                      <span className="text-xs font-bold text-slate-700 uppercase">Student Essay</span>
-                      <div className="p-4 bg-slate-50 rounded-2xl font-serif text-xs max-h-48 overflow-y-auto whitespace-pre-line text-slate-900 shadow-inner">{selectedSub.content}</div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                        <span>Student Essay Manuscript</span>
+                        <span className="text-[11px] text-orange-600">💡 Tip: Select any text snippet to add a color-coded highlight note.</span>
+                      </div>
+                      <div 
+                        onMouseUp={handleTextHighlightSelection}
+                        className="p-6 bg-amber-50/30 border border-slate-300 rounded-2xl font-serif text-sm leading-[2.4rem] text-slate-900 max-h-[450px] overflow-y-auto whitespace-pre-line shadow-inner select-text cursor-text"
+                      >
+                        {selectedSub.content}
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2">
+                    {selectedSub.ai_feedback && (
+                      <div className="p-4 bg-orange-50/60 border border-orange-200 rounded-2xl text-xs space-y-1">
+                        <b>🤖 AI Analytical Feedback:</b>
+                        <p className="whitespace-pre-line text-slate-700 leading-relaxed">{selectedSub.ai_feedback}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="xl:col-span-5 p-6 bg-white border border-slate-200 rounded-3xl space-y-5 shadow-xl self-start">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b pb-3">Evaluation &amp; Color Feedback</h4>
+
+                    <div className="space-y-2.5">
+                      <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Marked Highlights ({highlights.length})</span>
+                      {highlights.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-slate-200">No highlights added yet. Select text from the essay to attach color feedback.</p>
+                      ) : (
+                        <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                          {highlights.map((h, idx) => {
+                            const colorObj = HIGHLIGHT_COLORS.find(c => c.key === h.color) || HIGHLIGHT_COLORS[0];
+                            return (
+                              <div key={h.id} className={`p-3 rounded-xl border text-xs space-y-1.5 ${colorObj.bg}`}>
+                                <div className="flex items-center justify-between font-bold text-[10px] uppercase">
+                                  <span>#{idx + 1} • {h.category}</span>
+                                  <button onClick={() => setHighlights(highlights.filter(item => item.id !== h.id))} className="text-rose-700 font-bold cursor-pointer">✕</button>
+                                </div>
+                                <p className="italic font-serif bg-white/60 p-1.5 rounded text-[11px]">"{h.text}"</p>
+                                <input
+                                  type="text"
+                                  placeholder="Add specific note for this highlight..."
+                                  value={h.note}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setHighlights(highlights.map(item => item.id === h.id ? { ...item, note: val } : item));
+                                  }}
+                                  className="w-full p-2 bg-white/90 border rounded-lg text-xs text-slate-900 focus:outline-none"
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t">
                       <div>
                         <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. A (/12)</label>
-                        <input type="number" min="0" max="12" value={tScoreA} onChange={e => setTScoreA(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold" />
+                        <input type="number" min="0" max="12" value={tScoreA} onChange={e => setTScoreA(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold text-center" />
                       </div>
                       <div>
                         <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. B (/12)</label>
-                        <input type="number" min="0" max="12" value={tScoreB} onChange={e => setTScoreB(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold" />
+                        <input type="number" min="0" max="12" value={tScoreB} onChange={e => setTScoreB(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold text-center" />
                       </div>
                       <div>
                         <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. C (/6)</label>
-                        <input type="number" min="0" max="6" value={tScoreC} onChange={e => setTScoreC(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold" />
+                        <input type="number" min="0" max="6" value={tScoreC} onChange={e => setTScoreC(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold text-center" />
                       </div>
                     </div>
 
-                    <textarea rows={3} value={tFeedback} onChange={e => setTFeedback(e.target.value)} placeholder="Write your teacher feedback and guidance here..." className="w-full p-3 border rounded-2xl text-xs bg-slate-50 text-slate-900" />
-                    <button onClick={handleGradeSubmission} disabled={grading} className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-2xl shadow-md transition-all">{grading ? 'Saving...' : 'Save & Send Grade to Student'}</button>
-                  </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-700 uppercase">Overall Teacher Guidance &amp; Feedback</label>
+                      <textarea 
+                        rows={4} 
+                        value={tFeedback} 
+                        onChange={e => setTFeedback(e.target.value)} 
+                        placeholder="Write overall guidance and attach highlight notes..." 
+                        className="w-full p-3 border rounded-2xl text-xs bg-slate-50 text-slate-900" 
+                      />
+                    </div>
 
-                  <div className="md:col-span-5 p-6 bg-amber-50 border border-amber-200 rounded-3xl space-y-2 self-start">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-amber-900">🎯 IB Grading Guide: {selectedSub.chosen_text_type}</h4>
-                    <p className="text-[11px] text-slate-700 whitespace-pre-line bg-white/70 p-3 rounded-2xl border border-amber-100">{GRADING_TIPS[selectedSub.chosen_text_type] || GRADING_TIPS['Default']}</p>
+                    <button 
+                      onClick={handleGradeSubmission} 
+                      disabled={grading} 
+                      className="w-full py-3.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-bold text-xs rounded-2xl shadow-md transition-all disabled:opacity-50 cursor-pointer"
+                    >
+                      {grading ? 'Saving Grade...' : 'Save & Send Grade to Student'}
+                    </button>
                   </div>
                 </div>
-              ) : <div className="p-12 text-center bg-white border rounded-3xl text-xs text-slate-400">Select a submission from the left list to review and grade.</div>}
+              ) : (
+                <div className="p-16 text-center bg-white border rounded-3xl text-xs text-slate-400">
+                  Select a student submission from the left panel to open the wide reading and color-highlighting workspace.
+                </div>
+              )}
             </div>
           </div>
         )}

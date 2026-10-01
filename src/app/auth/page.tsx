@@ -1,16 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 export default function AuthPage() {
-  const router = useRouter();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<'student' | 'teacher'>('student');
+  const [role, setRole] = useState<'student' | 'teacher' | 'school-admin'>('student');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -36,16 +34,18 @@ export default function AuthPage() {
             {
               id: authData.user.id,
               full_name: fullName,
-              role: role,
+              role: role === 'school-admin' ? 'teacher' : role,
             }
           ]);
           if (profileError) console.error('Profile creation error:', profileError);
         }
 
         if (role === 'teacher') {
-          router.push('/teacher');
+          window.location.href = '/teacher';
+        } else if (role === 'school-admin') {
+          window.location.href = '/school-admin';
         } else {
-          router.push('/student');
+          window.location.href = '/student';
         }
       } else {
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -55,21 +55,40 @@ export default function AuthPage() {
 
         if (authError) throw authError;
 
+        // Eğer kullanıcı school-admin ise veya veritabanındaki rolüne göre yönlendirelim
+        if (role === 'school-admin') {
+          window.location.href = '/school-admin';
+          return;
+        }
+
         const { data: profile } = await supabase
           .from('profiles')
           .select('role')
           .eq('id', authData.user.id)
           .single();
 
-        if (profile?.role === 'teacher') {
-          router.push('/teacher');
+        // Okul koordinatörü olup olmadığını kontrol edelim
+        const { data: schoolMem } = await supabase
+          .from('school_memberships')
+          .select('role')
+          .eq('user_id', authData.user.id)
+          .eq('role', 'coordinator')
+          .single();
+
+        if (schoolMem || email.includes('admin') || profile?.role === 'teacher') {
+          if (schoolMem) {
+            window.location.href = '/school-admin';
+          } else if (profile?.role === 'teacher') {
+            window.location.href = '/teacher';
+          } else {
+            window.location.href = '/student';
+          }
         } else {
-          router.push('/student');
+          window.location.href = '/student';
         }
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'An error occurred during authentication.');
-    } finally {
       setLoading(false);
     }
   };
@@ -87,7 +106,7 @@ export default function AuthPage() {
           <p className="text-sm text-slate-500 mt-2">
             {isSignUp
               ? 'Join to practice or manage Paper 1 writing tasks'
-              : 'Sign in to access your dashboard and writing portfolios'}
+              : 'Sign in to access your dashboard, portfolios, or school license'}
           </p>
         </div>
 
@@ -142,37 +161,46 @@ export default function AuthPage() {
             />
           </div>
 
-          {isSignUp && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                I am a...
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setRole('student')}
-                  className={`py-3 px-4 rounded-xl text-sm font-semibold border transition-all text-center ${
-                    role === 'student'
-                      ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-500/20'
-                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
-                  }`}
-                >
-                  Student
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRole('teacher')}
-                  className={`py-3 px-4 rounded-xl text-sm font-semibold border transition-all text-center ${
-                    role === 'teacher'
-                      ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-500/20'
-                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
-                  }`}
-                >
-                  Teacher
-                </button>
-              </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+              Select Portal / Role
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setRole('student')}
+                className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition-all text-center ${
+                  role === 'student'
+                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-md'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                Student
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole('teacher')}
+                className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition-all text-center ${
+                  role === 'teacher'
+                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-md'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                Teacher
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole('school-admin')}
+                className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition-all text-center ${
+                  role === 'school-admin'
+                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-md'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                School Admin
+              </button>
             </div>
-          )}
+          </div>
 
           <button
             type="submit"
