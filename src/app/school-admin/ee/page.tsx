@@ -12,6 +12,7 @@ interface EEOverviewItem {
   subject_or_subjects: string;
   essay_title?: string;
   research_question?: string;
+  rationale?: string;
   status: string;
   student_profile?: { full_name: string; email: string };
   supervisor_profile?: { full_name: string; email: string };
@@ -33,10 +34,8 @@ export default function SchoolAdminEEPortal() {
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [teachers, setTeachers] = useState<UserProfile[]>([]);
 
-  // Aktif Sekme Kontrolü: 'assignments' veya 'groups'
   const [activeTab, setActiveTab] = useState<'assignments' | 'groups'>('assignments');
 
-  // Yeni EE Eşleştirme / Ekleme State'leri
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [selectedSupervisorId, setSelectedSupervisorId] = useState('');
   const [subjectInput, setSubjectInput] = useState('');
@@ -45,6 +44,12 @@ export default function SchoolAdminEEPortal() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [msg, setMsg] = useState('');
+
+  // Koordinatörün Modal üzerinden öğrenci incelemesi için state'ler
+  const [inspectingEE, setInspectingEE] = useState<EEOverviewItem | null>(null);
+  const [rrsEntries, setRrsEntries] = useState<any[]>([]);
+  const [reflections, setReflections] = useState<any[]>([]);
+  const [evaluationData, setEvaluationData] = useState<any>(null);
 
   useEffect(() => {
     initAdminPortal();
@@ -95,7 +100,6 @@ export default function SchoolAdminEEPortal() {
       setAllEssays(enhanced);
     }
 
-    // Okul üyeliklerini ve rollerini kesin olarak çekiyoruz
     const { data: memberships } = await supabase
       .from('school_memberships')
       .select('user_id, role');
@@ -112,8 +116,7 @@ export default function SchoolAdminEEPortal() {
       const teacherList: UserProfile[] = [];
 
       profs.forEach(p => {
-        const role = roleMap.get(p.id); // school_memberships tablosundaki gerçek rol
-        
+        const role = roleMap.get(p.id);
         if (role === 'teacher' || role === 'coordinator') {
           teacherList.push({ ...p, role });
         } else {
@@ -124,6 +127,21 @@ export default function SchoolAdminEEPortal() {
       setStudents(studentList);
       setTeachers(teacherList);
     }
+  };
+
+  const handleInspectStudent = async (ee: EEOverviewItem) => {
+    setInspectingEE(ee);
+    // RRS notlarını çek
+    const { data: rrs } = await supabase.from('ee_rrs_entries').select('*').eq('ee_id', ee.id).order('created_at', { ascending: false });
+    setRrsEntries(rrs || []);
+
+    // Yansımaları çek
+    const { data: refs } = await supabase.from('ee_reflections').select('*').eq('ee_id', ee.id).order('session_number', { ascending: true });
+    setReflections(refs || []);
+
+    // Değerlendirme / Taslak verisini çek
+    const { data: evalData } = await supabase.from('ee_evaluations').select('*').eq('ee_id', ee.id).maybeSingle();
+    setEvaluationData(evalData || null);
   };
 
   const handleCreateNewEEAssignment = async (e: React.FormEvent) => {
@@ -250,7 +268,80 @@ export default function SchoolAdminEEPortal() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col">
+    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col relative">
+      {/* Koordinatör Öğrenci İnceleme Modalı */}
+      {inspectingEE && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl max-w-3xl w-full p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b pb-4">
+              <div>
+                <span className="text-[10px] font-mono uppercase bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg font-bold border border-indigo-200">Coordinator Inspection Mode</span>
+                <h3 className="text-lg font-black text-slate-900 mt-1">{inspectingEE.student_profile?.full_name}'s Extended Essay</h3>
+              </div>
+              <button onClick={() => setInspectingEE(null)} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold cursor-pointer">Close ✕</button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="p-4 bg-slate-50 rounded-2xl border space-y-1">
+                <span className="font-bold text-slate-400 block text-[10px] uppercase">Subject &amp; Pathway</span>
+                <div className="font-bold text-slate-800">{inspectingEE.subject_or_subjects} ({inspectingEE.pathway})</div>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border space-y-1">
+                <span className="font-bold text-slate-400 block text-[10px] uppercase">Research Question &amp; Rationale</span>
+                <p className="font-serif text-slate-900 font-semibold mt-1">"{inspectingEE.research_question || 'No research question defined.'}"</p>
+                <p className="text-slate-600 mt-2">{inspectingEE.rationale || 'No rationale provided.'}</p>
+              </div>
+
+              {/* RRS & Ref */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 rounded-2xl border space-y-2">
+                  <span className="font-bold text-slate-400 block text-[10px] uppercase">RRS &amp; AI Prompt Log ({rrsEntries.length})</span>
+                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                    {rrsEntries.length === 0 ? <p className="text-slate-400 italic">No entries yet.</p> : rrsEntries.map(e => (
+                      <div key={e.id} className="p-2 bg-white rounded border text-[11px]">
+                        <span className="font-bold text-indigo-700 uppercase text-[9px]">{e.entry_type}</span>: {e.content}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-2xl border space-y-2">
+                  <span className="font-bold text-slate-400 block text-[10px] uppercase">Reflection Sessions ({reflections.length})</span>
+                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                    {reflections.length === 0 ? <p className="text-slate-400 italic">No sessions recorded.</p> : reflections.map(r => (
+                      <div key={r.id} className="p-2 bg-white rounded border text-[11px]">
+                        <div className="font-bold text-slate-800">Session {r.session_number}</div>
+                        <p className="text-slate-600">{r.student_notes || 'Pending notes.'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Taslak ve Değerlendirme */}
+              <div className="p-4 bg-amber-50/50 rounded-2xl border border-amber-200 space-y-2">
+                <span className="font-bold text-amber-800 block text-[10px] uppercase">Draft &amp; Supervisor Feedback</span>
+                <p className="font-serif text-slate-800 max-h-32 overflow-y-auto whitespace-pre-line text-[11px]">
+                  {evaluationData?.draft_content || 'No draft submitted yet.'}
+                </p>
+                {evaluationData?.supervisor_feedback && (
+                  <div className="pt-2 border-t border-amber-200 mt-2 text-slate-700 font-medium">
+                    <b>Supervisor Guidance:</b> {evaluationData.supervisor_feedback}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-4 border-t">
+              <button onClick={() => setInspectingEE(null)} className="px-6 py-2.5 bg-indigo-900 hover:bg-indigo-800 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer">
+                Back to Working Groups
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="border-b bg-white sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -500,7 +591,7 @@ export default function SchoolAdminEEPortal() {
                         {group.students.map(st => (
                           <div 
                             key={st.id} 
-                            onClick={() => router.push(`/teacher/ee`)}
+                            onClick={() => handleInspectStudent(st)}
                             className="p-3 bg-slate-50 hover:bg-indigo-50/50 border rounded-2xl flex items-center justify-between cursor-pointer transition-all group"
                           >
                             <div>
@@ -512,7 +603,7 @@ export default function SchoolAdminEEPortal() {
                               </div>
                             </div>
                             <span className="text-xs font-bold text-indigo-600 group-hover:translate-x-1 transition-transform">
-                              View Details ➔
+                              Inspect ➔
                             </span>
                           </div>
                         ))}
