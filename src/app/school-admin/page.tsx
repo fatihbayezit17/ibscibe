@@ -148,6 +148,29 @@ export default function SchoolAdminPortal() {
     }
   };
 
+  const handleResetPassword = async (member: SchoolMember) => {
+    const email = member.profiles?.email || 'User';
+    const newPassword = prompt(`"${email}" için yeni geçici şifre girin:`);
+    if (!newPassword) return;
+
+    try {
+      const res = await fetch('/api/admin/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: member.user_id, newPassword })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        alert(`Şifre başarıyla güncellendi!\nYeni Şifre: ${newPassword}`);
+      } else {
+        alert('Hata: ' + (data.error || 'Şifre güncellenemedi.'));
+      }
+    } catch (err: any) {
+      alert('Bir bağlantı hatası oluştu: ' + err.message);
+    }
+  };
+
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading School Admin Portal...</div>;
 
   const teacherCount = members.filter(m => m.role === 'teacher').length;
@@ -171,6 +194,41 @@ export default function SchoolAdminPortal() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
+        
+        {/* Gerçekçi ve Profesyonel Kurumsal Fotoğraflı Banner */}
+        <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 md:p-8 text-white shadow-xl flex flex-col md:flex-row items-center justify-between border border-slate-800">
+          
+          {/* Sol Taraf: Metinler */}
+          <div className="z-10 max-w-xl space-y-3">
+            <span className="inline-block px-3 py-1 bg-indigo-500/20 text-indigo-300 rounded-full text-[11px] font-mono uppercase tracking-widest border border-indigo-500/30">
+              IBDP Institutional Suite
+            </span>
+            <h2 className="text-2xl md:text-3xl font-black tracking-tight leading-snug">
+              Kurumunuz IBDP Süreçlerini Yapay Zeka ile Yönetiyor!
+            </h2>
+            <p className="text-xs md:text-sm text-slate-300 leading-relaxed">
+              English B Paper 1 analizleri, akıllı OCR değerlendirmeleri ve Extended Essay komuta merkezi ile öğretmenlerinizin yükünü hafifletin, öğrenci başarısını zirveye taşıyın.
+            </p>
+          </div>
+
+          {/* Sağ Taraf: Gerçekçi ve Kaliteli Eğitim/Ofis Fotoğrafı (Unsplash) */}
+          <div className="mt-6 md:mt-0 z-10 relative w-full md:w-72 h-44 rounded-2xl overflow-hidden shadow-2xl border border-white/10 group">
+            <img 
+              src="https://images.unsplash.com/photo-1531482615713-2afd69097998?auto=format&fit=crop&w=600&q=80" 
+              alt="IBDP Education & Technology" 
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-end p-3">
+              <span className="text-[11px] font-medium text-white/90 bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10">
+                ✨ Modern Eğitim Teknolojisi
+              </span>
+            </div>
+          </div>
+
+          {/* Arka Plan Işık Efektleri */}
+          <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        </div>
+
         {/* IBDP Extended Essay (EE) Komuta Merkezi Hızlı Erişim Kartı */}
         <div 
           onClick={() => router.push('/school-admin/ee')}
@@ -244,6 +302,14 @@ export default function SchoolAdminPortal() {
                   <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-800 border">
                     {m.role}
                   </span>
+                  
+                  <button 
+                    onClick={() => handleResetPassword(m)} 
+                    className="text-xs text-indigo-600 font-bold hover:underline cursor-pointer bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200"
+                  >
+                    Şifre Sıfırla
+                  </button>
+
                   {m.role !== 'coordinator' && (
                     <button onClick={() => handleRemoveMember(m)} className="text-xs text-rose-600 font-bold hover:underline cursor-pointer">
                       Delete &amp; Revoke

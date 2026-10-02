@@ -52,10 +52,11 @@ export default function TeacherEEPortal() {
   };
 
   const loadTeacherEEDiff = async (teacherId: string) => {
-    // Öğretmenin okulundaki veya sınıflarındaki öğrencilerin EE çalışmalarını çekelim
+    // SADECE oturum açan öğretmene (supervisor_id) atanmış EE çalışmalarını çekiyoruz
     const { data: eeData } = await supabase
       .from('extended_essays')
       .select('*')
+      .eq('supervisor_id', teacherId)
       .order('created_at', { ascending: false });
 
     if (eeData) {
@@ -69,6 +70,8 @@ export default function TeacherEEPortal() {
       setStudentEssays(enhanced);
       if (enhanced.length > 0 && !selectedEE) {
         selectEE(enhanced[0]);
+      } else if (enhanced.length === 0) {
+        setSelectedEE(null);
       }
     }
   };
@@ -152,9 +155,9 @@ export default function TeacherEEPortal() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Sol Liste: Öğrencilerin EE Çalışmaları */}
           <div className="lg:col-span-4 space-y-3 max-h-[80vh] overflow-y-auto pr-1">
-            <h3 className="text-xs font-black uppercase text-slate-500 px-1">Student Extended Essays ({studentEssays.length})</h3>
+            <h3 className="text-xs font-black uppercase text-slate-500 px-1">Supervised Student Essays ({studentEssays.length})</h3>
             {studentEssays.length === 0 ? (
-              <div className="p-6 text-center bg-white rounded-2xl border text-slate-400 text-xs">No student EE proposals submitted yet.</div>
+              <div className="p-6 text-center bg-white rounded-2xl border text-slate-400 text-xs">No students assigned to you yet.</div>
             ) : (
               studentEssays.map(ee => (
                 <div 
@@ -222,11 +225,11 @@ export default function TeacherEEPortal() {
                   </div>
                 </div>
 
-                {/* Taslak ve 30 Puanlık Değerlendirme (Kılavuz Uyumlu: Açık Uçlu Soru Desteği) */}
+                {/* Taslak ve 30 Puanlık Değerlendirme */}
                 <div className="p-8 bg-white border rounded-3xl shadow-sm space-y-6">
                   <div className="border-b pb-3">
-                    <h4 className="font-black text-sm text-slate-900">Draft Review &amp; 30-Point Assessment (Criteria A-E)[cite: 30]</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">Note: Supervisors are not permitted to make direct edits. Use open-ended guiding questions (e.g., "How does this evidence support your argument?")[cite: 33, 47].</p>
+                    <h4 className="font-black text-sm text-slate-900">Draft Review &amp; 30-Point Assessment (Criteria A-E)</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">Note: Supervisors are not permitted to make direct edits. Use open-ended guiding questions.</p>
                   </div>
 
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs font-serif text-slate-800 max-h-60 overflow-y-auto whitespace-pre-line">
@@ -236,40 +239,40 @@ export default function TeacherEEPortal() {
 
                   <div className="grid grid-cols-5 gap-2 pt-2">
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. A (/6)[cite: 30]</label>
+                      <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. A (/6)</label>
                       <input type="number" min="0" max="6" value={scoreA} onChange={e => setScoreA(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold text-center" />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. B (/6)[cite: 30]</label>
+                      <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. B (/6)</label>
                       <input type="number" min="0" max="6" value={scoreB} onChange={e => setScoreB(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold text-center" />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. C (/6)[cite: 30]</label>
+                      <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. C (/6)</label>
                       <input type="number" min="0" max="6" value={scoreC} onChange={e => setScoreC(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold text-center" />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. D (/8)[cite: 30]</label>
+                      <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. D (/8)</label>
                       <input type="number" min="0" max="8" value={scoreD} onChange={e => setScoreD(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold text-center" />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. E (/4)[cite: 29, 30]</label>
+                      <label className="block text-[10px] font-bold text-slate-700 mb-1">Crit. E (/4)</label>
                       <input type="number" min="0" max="4" value={scoreE} onChange={e => setScoreE(Number(e.target.value))} className="w-full p-2 border rounded-xl text-xs font-bold text-center" />
                     </div>
                   </div>
 
                   <div className="space-y-1">
-                    <label className="block text-xs font-bold text-slate-700 uppercase">Supervisor Guidance &amp; Open-Ended Questions (Safe Framework)[cite: 33, 47]</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase">Supervisor Guidance &amp; Open-Ended Questions</label>
                     <textarea 
                       rows={4}
                       value={supervisorFeedback}
                       onChange={e => setSupervisorFeedback(e.target.value)}
-                      placeholder="Ask pointed, open-ended questions like: 'I'm not sure I follow your argument here, because... What did you mean here?'"
+                      placeholder="Ask pointed, open-ended questions..."
                       className="w-full p-3 border rounded-2xl text-xs bg-slate-50 text-slate-900"
                     />
                   </div>
 
                   <div className="flex justify-between items-center pt-2">
-                    <span className="text-xs font-black text-indigo-900">Total Score: {scoreA + scoreB + scoreC + scoreD + scoreE} / 30[cite: 30]</span>
+                    <span className="text-xs font-black text-indigo-900">Total Score: {scoreA + scoreB + scoreC + scoreD + scoreE} / 30</span>
                     <button 
                       onClick={handleSaveEvaluation} 
                       disabled={saving} 
@@ -282,7 +285,7 @@ export default function TeacherEEPortal() {
               </div>
             ) : (
               <div className="p-16 text-center bg-white border rounded-3xl text-xs text-slate-400">
-                Select a student extended essay from the left panel to review their proposal, RRS, and draft.
+                You do not have any students assigned to you yet, or no student is selected.
               </div>
             )}
           </div>

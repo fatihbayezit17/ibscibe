@@ -475,7 +475,6 @@ export default function StudentPaper1Portal() {
       )}
 
       <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6 print:p-0">
-        {/* Üst Seviye Filtreleme / Pratik Çubuğu (Sınıf kayıt alanı tamamen kaldırıldı) */}
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex items-center justify-between gap-4 print:hidden">
           <div className="text-xs font-bold text-slate-700">
             Enrolled Classes: {enrolledClasses.length > 0 ? enrolledClasses.map(c => c.class_name).join(', ') : 'None (Using Default Pool)'}
@@ -619,8 +618,10 @@ export default function StudentPaper1Portal() {
           <div className="space-y-6">
             <h3 className="text-xl font-extrabold print:hidden">My Writing Submissions &amp; Feedback Portfolio</h3>
             {submissions.length === 0 ? <div className="p-12 text-center bg-white rounded-2xl border text-slate-500 text-sm">You have not submitted any essays yet.</div> : (
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                <div className={`space-y-3 ${selectedPortfolioSub ? 'md:col-span-5' : 'md:col-span-12'} print:hidden`}>
+              
+              /* GÜNCELLENEN KISIM: Sol liste dar (col-span-4), sağ detay alanı geniş (col-span-8) */
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                <div className={`space-y-3 ${selectedPortfolioSub ? 'lg:col-span-4' : 'lg:col-span-12'} print:hidden`}>
                   {submissions.map(sub => {
                     const totalAi = (sub.ai_score_a || 0) + (sub.ai_score_b || 0) + (sub.ai_score_c || 0);
                     const showNotif = sub.teacher_feedback && sub.is_read_by_student === false;
@@ -638,7 +639,7 @@ export default function StudentPaper1Portal() {
                 </div>
 
                 {selectedPortfolioSub && (
-                  <div className="md:col-span-7 bg-white border border-slate-200 p-8 rounded-3xl space-y-6 shadow-xl print:shadow-none print:w-full">
+                  <div className="lg:col-span-8 bg-white border border-slate-200 p-8 rounded-3xl space-y-6 shadow-xl print:shadow-none print:w-full">
                     <div className="flex justify-between items-center border-b border-slate-100 pb-4 print:hidden">
                       <h3 className="font-bold text-sm text-slate-900">{selectedPortfolioSub.chosen_text_type}</h3>
                       <div className="flex gap-2">
@@ -735,7 +736,7 @@ export default function StudentPaper1Portal() {
                         </button>
                       </div>
                     ) : (
-                      <div className="p-5 bg-slate-50 rounded-2xl whitespace-pre-line font-serif text-xs leading-relaxed max-h-60 overflow-y-auto border border-slate-200">
+                      <div className="p-5 bg-slate-50 rounded-2xl whitespace-pre-line font-serif text-xs leading-relaxed max-h-96 overflow-y-auto border border-slate-200">
                         {selectedPortfolioSub.content}
                       </div>
                     )}

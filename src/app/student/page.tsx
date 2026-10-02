@@ -11,6 +11,7 @@ interface StudentDashboardData {
   hasEEAccess: boolean;
   unreadCount: number;
   totalSubmissions: number;
+  latestSubmissionWithFeedback: any | null;
 }
 
 export default function StudentDashboardPortal() {
@@ -22,12 +23,13 @@ export default function StudentDashboardPortal() {
     enrolledClasses: [],
     hasEEAccess: false,
     unreadCount: 0,
-    totalSubmissions: 0
+    totalSubmissions: 0,
+    latestSubmissionWithFeedback: null
   });
 
   const [joinCode, setJoinCode] = useState('');
-  const [schoolCodeInput, setSchoolCodeInput] = useState('');
   const [joinMsg, setJoinMsg] = useState('');
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
   useEffect(() => {
     initDashboard();
@@ -73,51 +75,24 @@ export default function StudentDashboardPortal() {
 
     const { data: subs } = await supabase
       .from('submissions')
-      .select('id, teacher_feedback, is_read_by_student')
-      .eq('student_id', user.id);
+      .select('*')
+      .eq('student_id', user.id)
+      .order('created_at', { ascending: false });
 
-    const unread = (subs || []).filter(s => s.teacher_feedback && s.is_read_by_student === false).length;
+    const unreadSubs = (subs || []).filter(s => s.teacher_feedback && s.is_read_by_student === false);
+    const latestWithFeedback = (subs || []).find(s => s.teacher_feedback) || null;
 
     setData({
       profile: prof || { full_name: defaultName, email: user.email },
       schoolName: sName,
       enrolledClasses: clsList,
       hasEEAccess: eeAccess,
-      unreadCount: unread,
-      totalSubmissions: (subs || []).length
+      unreadCount: unreadSubs.length,
+      totalSubmissions: (subs || []).length,
+      latestSubmissionWithFeedback: latestWithFeedback
     });
 
     setLoading(false);
-  };
-
-  const handleJoinSchoolLicense = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!schoolCodeInput.trim()) return;
-
-    const { data: school, error: err } = await supabase
-      .from('school_licenses')
-      .select('id, school_name, student_limit')
-      .eq('join_code', schoolCodeInput.trim().toUpperCase())
-      .single();
-
-    if (err || !school) {
-      alert('Invalid school code.');
-      return;
-    }
-
-    const { error: insErr } = await supabase.from('school_memberships').insert([{
-      school_id: school.id,
-      user_id: data.profile.id,
-      role: 'student'
-    }]);
-
-    if (insErr) {
-      alert('Error joining school: ' + insErr.message);
-    } else {
-      alert(`Successfully joined ${school.school_name}!`);
-      await initDashboard();
-      setSchoolCodeInput('');
-    }
   };
 
   const handleJoinClass = async (e: React.FormEvent) => {
@@ -127,13 +102,29 @@ export default function StudentDashboardPortal() {
 
     const { data: classObj, error: classErr } = await supabase
       .from('classes')
-      .select('id, class_name')
+      .select('id, class_name, school_id')
       .eq('join_code', joinCode.trim().toUpperCase())
       .single();
 
     if (classErr || !classObj) {
       setJoinMsg('Invalid class code.');
       return;
+    }
+
+    if (classObj.school_id) {
+      const { data: existingMem } = await supabase
+        .from('school_memberships')
+        .select('id')
+        .eq('user_id', data.profile.id)
+        .maybeSingle();
+
+      if (!existingMem) {
+        await supabase.from('school_memberships').insert([{
+          school_id: classObj.school_id,
+          user_id: data.profile.id,
+          role: 'student'
+        }]);
+      }
     }
 
     const { error: joinErr } = await supabase.from('class_members').upsert([
@@ -149,7 +140,22 @@ export default function StudentDashboardPortal() {
     }
   };
 
+  const handleOpenFeedback = async () => {
+    if (!data.latestSubmissionWithFeedback) {
+      alert('No teacher feedback available yet.');
+      return;
+    }
+    // Okundu olarak işaretleyelim
+    if (data.latestSubmissionWithFeedback.is_read_by_student === false) {
+      await supabase.from('submissions').update({ is_read_by_student: true }).eq('id', data.latestSubmissionWithFeedback.id);
+      setData(prev => ({ ...prev, unreadCount: 0 }));
+    }
+    setShowFeedbackModal(true);
+  };
+
   if (loading) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-600">Loading Student Portal...</div>;
+
+  const sub = data.latestSubmissionWithFeedback;
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
@@ -176,6 +182,60 @@ export default function StudentDashboardPortal() {
         </div>
       </header>
 
+      {/* New Feedback Detay Modal Penceresi (Öğrenci Kendi Anasayfasında Görür) */}
+      {showFeedbackModal && sub && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b pb-4">
+              <div>
+                <span className="px-3 py-1 bg-orange-100 text-orange-800 text-xs font-bold rounded-full border border-orange-200">{sub.chosen_text_type}</span>
+                <h3 className="text-lg font-black mt-1">Teacher Feedback &amp; Assessment</h3>
+              </div>
+              <button onClick={() => setShowFeedbackModal(false)} className="px-3 py-1.5 bg-slate-100 rounded-xl text-xs font-bold cursor-pointer">Close ✕</button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 bg-orange-50 rounded-2xl border border-orange-200">
+                <span className="block text-[11px] font-black text-orange-800 uppercase tracking-wider mb-1">🤖 AI Assessment</span>
+                <div className="text-xs space-y-0.5 text-slate-700">
+                  <div>Crit A (Lang): <b>{sub.ai_score_a ?? '-'}/12</b></div>
+                  <div>Crit B (Msg): <b>{sub.ai_score_b ?? '-'}/12</b></div>
+                  <div>Crit C (Concept): <b>{sub.ai_score_c ?? '-'}/6</b></div>
+                  <div className="pt-1 font-black text-orange-900 border-t border-orange-200 mt-1">Total: {(sub.ai_score_a || 0) + (sub.ai_score_b || 0) + (sub.ai_score_c || 0)} / 30</div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
+                <span className="block text-[11px] font-black text-emerald-800 uppercase tracking-wider mb-1">👨‍🏫 Teacher Assessment</span>
+                {sub.criterion_a_score !== null ? (
+                  <div className="text-xs space-y-0.5 text-slate-700">
+                    <div>Crit A (Lang): <b>{sub.criterion_a_score}/12</b></div>
+                    <div>Crit B (Msg): <b>{sub.criterion_b_score}/12</b></div>
+                    <div>Crit C (Concept): <b>{sub.criterion_c_score}/6</b></div>
+                    <div className="pt-1 font-black text-emerald-900 border-t border-emerald-200 mt-1">Total: {(sub.criterion_a_score || 0) + (sub.criterion_b_score || 0) + (sub.criterion_c_score || 0)} / 30</div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-amber-700 font-medium italic mt-2">Awaiting teacher evaluation and grading...</p>
+                )}
+              </div>
+            </div>
+
+            {sub.teacher_feedback && (
+              <div className="p-5 bg-emerald-500 text-white rounded-2xl shadow-md space-y-1.5">
+                <div className="text-xs font-black uppercase tracking-wider">🔔 Teacher Feedback &amp; Guidance</div>
+                <p className="text-xs whitespace-pre-line leading-relaxed font-medium">{sub.teacher_feedback}</p>
+              </div>
+            )}
+
+            <div className="p-5 bg-slate-50 rounded-2xl whitespace-pre-line font-serif text-xs leading-relaxed max-h-48 overflow-y-auto border border-slate-200">
+              {sub.content}
+            </div>
+
+            <button onClick={() => setShowFeedbackModal(false)} className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl shadow-md cursor-pointer">Close Window</button>
+          </div>
+        </div>
+      )}
+
       <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
         {/* Karşılama ve Durum Kartları */}
         <div className="p-8 bg-white border rounded-3xl shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
@@ -184,76 +244,68 @@ export default function StudentDashboardPortal() {
               Student Command Center
             </span>
             <h1 className="text-2xl font-black text-slate-900">Welcome back, {data.profile?.full_name}</h1>
-            <p className="text-xs text-slate-500">Manage your classrooms, join school licenses, and access your IBDP exam modules below.</p>
+            <p className="text-xs text-slate-500">Manage your classrooms, join via class code, and access your IBDP exam modules below.</p>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="p-4 bg-slate-50 border rounded-2xl text-center">
+            {/* Submissions Kartı -> Tıklanamaz, sadece sayı gösterir */}
+            <div className="p-4 bg-slate-50 border rounded-2xl text-center shadow-xs">
               <span className="text-[10px] font-mono uppercase text-slate-400 block">Submissions</span>
-              <span className="text-xl font-black text-slate-900">{data.totalSubmissions}</span>
+              <span className="text-xl font-black text-slate-900 inline-block">{data.totalSubmissions}</span>
             </div>
-            <div className="p-4 bg-slate-50 border rounded-2xl text-center relative">
+
+            {/* New Feedback Kartı -> Tıklandığında doğrudan son feedback'i açar */}
+            <div 
+              onClick={handleOpenFeedback}
+              className="p-4 bg-orange-50/50 hover:bg-orange-100/60 border border-orange-200 rounded-2xl text-center relative cursor-pointer transition-all shadow-xs group"
+            >
               {data.unreadCount > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-600 rounded-full animate-ping" />}
-              <span className="text-[10px] font-mono uppercase text-slate-400 block">New Feedback</span>
-              <span className="text-xl font-black text-orange-600">{data.unreadCount}</span>
+              <span className="text-[10px] font-mono uppercase text-orange-700 font-bold block">New Feedback</span>
+              <span className="text-xl font-black text-orange-600 group-hover:scale-105 transition-transform inline-block">{data.unreadCount}</span>
             </div>
           </div>
         </div>
 
-        {/* Classroom & School Code Enrollment (Paper 1 sayfasından buraya taşındı) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {!data.schoolName && (
-            <div className="p-6 bg-white border rounded-3xl shadow-sm space-y-3">
-              <h3 className="font-bold text-xs text-indigo-900 uppercase">Join School License</h3>
-              <form onSubmit={handleJoinSchoolLicense} className="flex gap-2">
-                <input 
-                  type="text" 
-                  placeholder="ENTER SCHOOL CODE" 
-                  value={schoolCodeInput} 
-                  onChange={e => setSchoolCodeInput(e.target.value)} 
-                  className="px-4 py-2 border rounded-xl text-xs uppercase bg-slate-50 flex-1 font-mono" 
-                />
-                <button type="submit" className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm cursor-pointer">Join</button>
-              </form>
+        {/* Tek Kod ile Sınıf ve Okul Kayıt Alanı */}
+        <div className="p-6 bg-white border rounded-3xl shadow-sm space-y-3">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <h3 className="font-bold text-xs text-slate-900 uppercase">Classroom &amp; School Enrolment ({data.enrolledClasses.length})</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Enter your class code provided by your teacher to automatically join your class and school license.</p>
             </div>
+            <form onSubmit={handleJoinClass} className="flex gap-2 w-full md:w-auto">
+              <input 
+                type="text" 
+                placeholder="ENTER CLASS CODE (e.g. IB-1234)" 
+                value={joinCode} 
+                onChange={e => setJoinCode(e.target.value)} 
+                className="px-4 py-2 border rounded-xl text-xs uppercase bg-slate-50 font-mono flex-1 md:w-64" 
+              />
+              <button type="submit" className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm cursor-pointer whitespace-nowrap">Join Class</button>
+            </form>
+          </div>
+
+          {data.enrolledClasses.length > 0 ? (
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+              {data.enrolledClasses.map(c => (
+                <span key={c.id} className="px-3.5 py-2 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
+                  <span>✓ Enrolled: {c.class_name}</span>
+                  <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border text-slate-600">Code: {c.join_code}</span>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 italic pt-1">You are not enrolled in any class yet. Enter your class code above.</p>
           )}
-
-          <div className={`p-6 bg-white border rounded-3xl shadow-sm space-y-3 ${!data.schoolName ? 'md:col-span-1' : 'md:col-span-2'}`}>
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold text-xs text-slate-900 uppercase">Classroom Enrolment ({data.enrolledClasses.length})</h3>
-              <form onSubmit={handleJoinClass} className="flex gap-2">
-                <input 
-                  type="text" 
-                  placeholder="ENTER CLASS CODE (e.g. IB-1234)" 
-                  value={joinCode} 
-                  onChange={e => setJoinCode(e.target.value)} 
-                  className="px-3 py-1.5 border rounded-xl text-xs uppercase bg-slate-50 font-mono" 
-                />
-                <button type="submit" className="px-4 py-1.5 bg-slate-900 text-white text-xs font-bold rounded-xl shadow-sm cursor-pointer">Join Class</button>
-              </form>
-            </div>
-            {data.enrolledClasses.length > 0 ? (
-              <div className="flex flex-wrap gap-2 pt-1">
-                {data.enrolledClasses.map(c => (
-                  <span key={c.id} className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold">
-                    ✓ Enrolled: {c.class_name} (Code: {c.join_code})
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-400 italic">You are not enrolled in any class yet. Enter a class code above to join.</p>
-            )}
-            {joinMsg && <div className="p-2.5 bg-orange-50 text-xs text-orange-800 rounded-xl border border-orange-200">{joinMsg}</div>}
-          </div>
+          {joinMsg && <div className="p-2.5 bg-orange-50 text-xs text-orange-800 rounded-xl border border-orange-200">{joinMsg}</div>}
         </div>
 
-        {/* Gerçek IBDP Exam Paper Estetiğinde Paper 1 Giriş Kartı */}
+        {/* Paper 1 ve EE Kartları */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
           <div 
             onClick={() => router.push('/student/paper1')}
             className="p-8 bg-white border-2 border-slate-900 rounded-3xl shadow-lg cursor-pointer hover:border-orange-600 transition-all flex flex-col justify-between space-y-8 group relative overflow-hidden"
           >
-            {/* Üst IB Sınav Kağıdı Kodu ve Logosu */}
             <div className="flex justify-between items-start border-b-2 border-slate-900 pb-6">
               <div className="space-y-1 font-mono text-[11px] font-bold tracking-widest text-slate-600">
                 <div>SPEC/2/ABENG/HP1/ENG/TZ0/XX</div>
@@ -264,7 +316,6 @@ export default function StudentDashboardPortal() {
               </div>
             </div>
 
-            {/* Çok Dilli Başlıklar (Gönderdiğiniz Görseldeki Gibi) */}
             <div className="space-y-3 font-serif">
               <div>
                 <h3 className="text-lg font-black text-slate-900">English B — Higher/Standard level — Paper 1</h3>
@@ -284,7 +335,6 @@ export default function StudentDashboardPortal() {
             </div>
           </div>
 
-          {/* Extended Essay (EE) Kartı (Sadece Yetkisi Varsa) */}
           {data.hasEEAccess ? (
             <div 
               onClick={() => router.push('/student/ee')}
