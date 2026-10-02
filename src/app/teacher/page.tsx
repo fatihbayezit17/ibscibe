@@ -64,11 +64,11 @@ const PRESET_TEMPLATES: Record<string, { title: string; prompt: string }> = {
   'Human Ingenuity': { title: 'AI in the Classroom', prompt: 'Classrooms are integrating artificial intelligence tools. Write a text discussing how AI should be embraced as a collaborative learning assistant rather than feared.' }
 };
 
-const HIGHLIGHT_COLORS = [
-  { key: 'yellow', label: 'Vocabulary / Word Choice', bg: 'bg-yellow-200 text-yellow-900 border-yellow-400' },
-  { key: 'red', label: 'Grammar & Mechanics', bg: 'bg-rose-200 text-rose-900 border-rose-400' },
-  { key: 'blue', label: 'Structure & Format', bg: 'bg-sky-200 text-sky-900 border-sky-400' },
-  { key: 'green', label: 'Strong Argument / Good Point', bg: 'bg-emerald-200 text-emerald-900 border-emerald-400' },
+// Kriter bazlı renk paleti (Criterion A, B, C)
+const CRITERION_COLORS = [
+  { key: 'yellow', label: 'Criterion A (Language)', bg: 'bg-yellow-200 text-yellow-900 border-yellow-400' },
+  { key: 'blue', label: 'Criterion B (Message)', bg: 'bg-sky-200 text-sky-900 border-sky-400' },
+  { key: 'green', label: 'Criterion C (Conceptual)', bg: 'bg-emerald-200 text-emerald-900 border-emerald-400' },
 ];
 
 export default function TeacherPortal() {
@@ -142,7 +142,6 @@ export default function TeacherPortal() {
     }
     setUser(user);
 
-    // Öğretmenin profil bilgilerini çekelim
     const { data: prof } = await supabase
       .from('profiles')
       .select('*')
@@ -362,7 +361,7 @@ export default function TeacherPortal() {
       }).eq('id', selectedSub.id);
 
       if (error) throw error;
-      alert('Teacher grade, color highlights and feedback successfully sent to student!');
+      alert('Teacher grade, criteria highlights and feedback successfully sent to student!');
       await loadTeacherData(user.id);
     } catch (err: any) {
       alert('Error saving grade: ' + err.message);
@@ -377,7 +376,7 @@ export default function TeacherPortal() {
     const selectedText = selection.toString().trim();
     if (!selectedText) return;
 
-    const matchedColorObj = HIGHLIGHT_COLORS.find(c => c.key === activeHighlightColor) || HIGHLIGHT_COLORS[0];
+    const matchedColorObj = CRITERION_COLORS.find(c => c.key === activeHighlightColor) || CRITERION_COLORS[0];
     const newHighlight: HighlightItem = {
       id: Math.random().toString(36).substring(2, 9),
       text: selectedText,
@@ -433,7 +432,6 @@ export default function TeacherPortal() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
-        {/* Banner with Real Books Photo Background */}
         <div className="relative rounded-3xl overflow-hidden shadow-md border border-slate-200 text-white p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-slate-900">
           <div className="absolute inset-0 z-0">
             <img 
@@ -448,11 +446,10 @@ export default function TeacherPortal() {
             <span className="text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 bg-orange-600/90 text-white rounded-lg font-bold border border-orange-500/40 backdrop-blur-sm">
               Teacher Command Center
             </span>
-            {/* Giriş yapan öğretmenin adı dinamik olarak basılır */}
             <h1 className="text-2xl md:text-3xl font-black text-white drop-shadow-md">
               Welcome back, {teacherDisplayName}
             </h1>
-            <p className="text-xs text-slate-200 max-w-xl drop-shadow">Manage your IBDP classes, assign tasks with deadlines, and evaluate student submissions using AI and color-coded feedback.</p>
+            <p className="text-xs text-slate-200 max-w-xl drop-shadow">Manage your IBDP classes, assign tasks with deadlines, and evaluate student submissions using criteria-based color highlights.</p>
           </div>
 
           <div className="flex items-center gap-3 relative z-10 shrink-0">
@@ -476,13 +473,6 @@ export default function TeacherPortal() {
             </div>
           </div>
         </div>
-
-        {pendingCount > 0 && activeTab !== 'submissions' && (
-          <div onClick={() => setActiveTab('submissions')} className="p-4 rounded-3xl bg-amber-500 text-white font-bold text-xs flex items-center justify-between shadow-md cursor-pointer hover:bg-amber-600 transition-all">
-            <span>🔔 You have {pendingCount} new student submission(s) waiting for your review and grading!</span>
-            <span className="underline">Click to Grade Now ➔</span>
-          </div>
-        )}
 
         {activeTab === 'classes' ? (
           <div className="space-y-6">
@@ -534,15 +524,8 @@ export default function TeacherPortal() {
               <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
                 <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto shadow-2xl">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <h3 className="text-base font-extrabold text-slate-900">
-                      Submissions by: {activeStudentName}
-                    </h3>
-                    <button
-                      onClick={() => setSelectedStudentSubmissions(null)}
-                      className="px-3 py-1 bg-slate-100 rounded-xl text-xs font-bold text-slate-700 cursor-pointer"
-                    >
-                      Close ✕
-                    </button>
+                    <h3 className="text-base font-extrabold text-slate-900">Submissions by: {activeStudentName}</h3>
+                    <button onClick={() => setSelectedStudentSubmissions(null)} className="px-3 py-1 bg-slate-100 rounded-xl text-xs font-bold text-slate-700 cursor-pointer">Close ✕</button>
                   </div>
                   {selectedStudentSubmissions.length === 0 ? (
                     <p className="text-xs text-slate-500 py-8 text-center">This student has not submitted any essays yet.</p>
@@ -551,22 +534,12 @@ export default function TeacherPortal() {
                       {selectedStudentSubmissions.map(sub => {
                         const totalAi = (sub.ai_score_a || 0) + (sub.ai_score_b || 0) + (sub.ai_score_c || 0);
                         return (
-                          <div
-                            key={sub.id}
-                            onClick={() => handleJumpToSubmission(sub)}
-                            className="p-4 rounded-2xl bg-slate-50 hover:bg-orange-50 border border-slate-200 cursor-pointer space-y-2 transition-all relative group"
-                          >
+                          <div key={sub.id} onClick={() => handleJumpToSubmission(sub)} className="p-4 rounded-2xl bg-slate-50 hover:bg-orange-50 border border-slate-200 cursor-pointer space-y-2 transition-all relative group">
                             <div className="flex items-center justify-between text-xs font-bold">
                               <span className="text-orange-700">{sub.chosen_text_type}</span>
                               <div className="flex items-center gap-2">
                                 <span className="text-slate-600">{sub.word_count} words • AI Score: {totalAi}/30</span>
-                                <button
-                                  onClick={(e) => handleDeleteSubmission(sub.id, e)}
-                                  title="Delete submission"
-                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                                >
-                                  🗑️
-                                </button>
+                                <button onClick={(e) => handleDeleteSubmission(sub.id, e)} className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer">🗑️</button>
                               </div>
                             </div>
                             <p className="text-xs font-serif text-slate-800 line-clamp-2">{sub.content}</p>
@@ -643,41 +616,6 @@ export default function TeacherPortal() {
                   <button type="submit" className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer">Assign Task with Deadline</button>
                 </form>
               </div>
-
-              <div className="p-6 bg-white border rounded-3xl space-y-4 shadow-sm">
-                <h3 className="font-bold text-sm text-slate-900">📋 Previously Assigned Tasks ({assignedTasks.length})</h3>
-                {assignedTasks.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">No tasks assigned yet.</p>
-                ) : (
-                  <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                    {assignedTasks.map(task => {
-                      const clsObj = classes.find(c => c.id === task.class_id);
-                      return (
-                        <div key={task.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-start justify-between gap-3">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-100 text-orange-800">{task.theme} ({task.level})</span>
-                              {clsObj && <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">{clsObj.class_name}</span>}
-                            </div>
-                            <h4 className="text-xs font-black text-slate-900">{task.title}</h4>
-                            <p className="text-[11px] text-slate-600 line-clamp-2">{task.prompt}</p>
-                            {task.deadline && (
-                              <p className="text-[10px] text-rose-600 font-bold">⏰ Deadline: {new Date(task.deadline).toLocaleString()}</p>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => handleDeleteTask(task.id)}
-                            title="Delete assigned task"
-                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer shrink-0"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
             </div>
 
             <div className="lg:col-span-5 space-y-4">
@@ -718,20 +656,8 @@ export default function TeacherPortal() {
                       }} 
                       className={`p-3.5 border rounded-2xl bg-white cursor-pointer relative transition-all ${isSelected ? 'border-orange-600 ring-2 ring-orange-500 shadow-sm bg-orange-50/30' : 'border-slate-200 hover:border-slate-300'}`}
                     >
-                      {isPending ? (
-                        <span className="absolute top-2.5 right-8 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-                      ) : (
-                        <span className="absolute top-2.5 right-8 text-xs font-bold text-emerald-600">✓</span>
-                      )}
-
-                      <button
-                        onClick={(e) => handleDeleteSubmission(sub.id, e)}
-                        title="Delete submission"
-                        className="absolute top-2 right-2 p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer z-10"
-                      >
-                        🗑️
-                      </button>
-
+                      {isPending ? <span className="absolute top-2.5 right-8 w-2 h-2 rounded-full bg-rose-500 animate-ping" /> : <span className="absolute top-2.5 right-8 text-xs font-bold text-emerald-600">✓</span>}
+                      <button onClick={(e) => handleDeleteSubmission(sub.id, e)} title="Delete" className="absolute top-2 right-2 p-1.5 text-slate-400 hover:text-rose-600 rounded-lg cursor-pointer z-10">🗑️</button>
                       <div className="font-bold text-xs text-slate-900 truncate pr-8">{sub.profiles?.full_name || 'Student'}</div>
                       <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1 pr-6">
                         <span className="font-semibold text-orange-700 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">{sub.chosen_text_type}</span>
@@ -749,16 +675,7 @@ export default function TeacherPortal() {
                   <div className="xl:col-span-7 p-6 bg-white border border-slate-200 rounded-3xl space-y-5 shadow-xl">
                     <div className="flex justify-between items-center border-b pb-4">
                       <div>
-                        <div className="flex items-center gap-3">
-                          <h3 className="font-black text-base text-slate-900">{selectedSub.profiles?.full_name}</h3>
-                          <button
-                            onClick={(e) => handleDeleteSubmission(selectedSub.id, e)}
-                            title="Delete submission"
-                            className="px-2.5 py-1 text-xs text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1"
-                          >
-                            <span>🗑️</span> Delete
-                          </button>
-                        </div>
+                        <h3 className="font-black text-base text-slate-900">{selectedSub.profiles?.full_name}</h3>
                         <p className="text-xs text-slate-500 mt-1">Task Type: <span className="font-bold text-orange-700">{selectedSub.chosen_text_type}</span> • Total Words: <b>{selectedSub.word_count}</b></p>
                       </div>
                       <div className="px-3 py-1.5 bg-orange-50 rounded-2xl border border-orange-200 text-center">
@@ -767,13 +684,14 @@ export default function TeacherPortal() {
                       </div>
                     </div>
 
+                    {/* Criterion Renkli Seçim Paleti */}
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col gap-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Highlight Palette (Select text to mark):</span>
-                        <span className="text-[10px] text-slate-400 italic">Highlight active color below</span>
+                        <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Criterion Highlight Palette:</span>
+                        <span className="text-[10px] text-slate-400 italic">Select text in the manuscript</span>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {HIGHLIGHT_COLORS.map(col => (
+                        {CRITERION_COLORS.map(col => (
                           <button
                             key={col.key}
                             type="button"
@@ -790,7 +708,7 @@ export default function TeacherPortal() {
                     <div className="space-y-2">
                       <div className="flex justify-between items-center text-xs font-bold text-slate-600">
                         <span>Student Essay Manuscript</span>
-                        <span className="text-[11px] text-orange-600">💡 Tip: Select any text snippet to add a color-coded highlight note.</span>
+                        <span className="text-[11px] text-orange-600">💡 Select text to highlight &amp; add notes</span>
                       </div>
                       <div 
                         onMouseUp={handleTextHighlightSelection}
@@ -799,26 +717,19 @@ export default function TeacherPortal() {
                         {selectedSub.content}
                       </div>
                     </div>
-
-                    {selectedSub.ai_feedback && (
-                      <div className="p-4 bg-orange-50/60 border border-orange-200 rounded-2xl text-xs space-y-1">
-                        <b>🤖 AI Analytical Feedback:</b>
-                        <p className="whitespace-pre-line text-slate-700 leading-relaxed">{selectedSub.ai_feedback}</p>
-                      </div>
-                    )}
                   </div>
 
                   <div className="xl:col-span-5 p-6 bg-white border border-slate-200 rounded-3xl space-y-5 shadow-xl self-start">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b pb-3">Evaluation &amp; Color Feedback</h4>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b pb-3">Criteria Feedback &amp; Notes</h4>
 
                     <div className="space-y-2.5">
                       <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Marked Highlights ({highlights.length})</span>
                       {highlights.length === 0 ? (
-                        <p className="text-[11px] text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-slate-200">No highlights added yet. Select text from the essay to attach color feedback.</p>
+                        <p className="text-[11px] text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-slate-200">No highlights added yet. Select text to attach criteria feedback.</p>
                       ) : (
                         <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
                           {highlights.map((h, idx) => {
-                            const colorObj = HIGHLIGHT_COLORS.find(c => c.key === h.color) || HIGHLIGHT_COLORS[0];
+                            const colorObj = CRITERION_COLORS.find(c => c.key === h.color) || CRITERION_COLORS[0];
                             return (
                               <div key={h.id} className={`p-3 rounded-xl border text-xs space-y-1.5 ${colorObj.bg}`}>
                                 <div className="flex items-center justify-between font-bold text-[10px] uppercase">
@@ -828,13 +739,13 @@ export default function TeacherPortal() {
                                 <p className="italic font-serif bg-white/60 p-1.5 rounded text-[11px]">"{h.text}"</p>
                                 <input
                                   type="text"
-                                  placeholder="Add specific note for this highlight..."
+                                  placeholder="Öğrenci için ipucu/not yazın..."
                                   value={h.note}
                                   onChange={e => {
                                     const val = e.target.value;
                                     setHighlights(highlights.map(item => item.id === h.id ? { ...item, note: val } : item));
                                   }}
-                                  className="w-full p-2 bg-white/90 border rounded-lg text-xs text-slate-900 focus:outline-none"
+                                  className="w-full p-2 bg-white border rounded-lg text-xs text-slate-900 focus:outline-none font-sans"
                                 />
                               </div>
                             );
@@ -859,29 +770,17 @@ export default function TeacherPortal() {
                     </div>
 
                     <div className="space-y-1">
-                      <label className="block text-[10px] font-bold text-slate-700 uppercase">Overall Teacher Guidance &amp; Feedback</label>
-                      <textarea 
-                        rows={4} 
-                        value={tFeedback} 
-                        onChange={e => setTFeedback(e.target.value)} 
-                        placeholder="Write overall guidance and attach highlight notes..." 
-                        className="w-full p-3 border rounded-2xl text-xs bg-slate-50 text-slate-900" 
-                      />
+                      <label className="block text-[10px] font-bold text-slate-700 uppercase">Overall Teacher Guidance</label>
+                      <textarea rows={3} value={tFeedback} onChange={e => setTFeedback(e.target.value)} placeholder="Genel değerlendirme..." className="w-full p-3 border rounded-2xl text-xs bg-slate-50 text-slate-900" />
                     </div>
 
-                    <button 
-                      onClick={handleGradeSubmission} 
-                      disabled={grading} 
-                      className="w-full py-3.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-bold text-xs rounded-2xl shadow-md transition-all disabled:opacity-50 cursor-pointer"
-                    >
-                      {grading ? 'Saving Grade...' : 'Save & Send Grade to Student'}
+                    <button onClick={handleGradeSubmission} disabled={grading} className="w-full py-3.5 bg-gradient-to-r from-orange-600 to-amber-600 text-white font-bold text-xs rounded-2xl shadow-md transition-all cursor-pointer">
+                      {grading ? 'Saving...' : 'Save & Send Grade to Student'}
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="p-16 text-center bg-white border rounded-3xl text-xs text-slate-400">
-                  Select a student submission from the left panel to open the wide reading and color-highlighting workspace.
-                </div>
+                <div className="p-16 text-center bg-white border rounded-3xl text-xs text-slate-400">Select a student submission from the left panel.</div>
               )}
             </div>
           </div>
