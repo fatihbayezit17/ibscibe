@@ -74,6 +74,7 @@ const HIGHLIGHT_COLORS = [
 export default function TeacherPortal() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
+  const [teacherProfile, setTeacherProfile] = useState<any>(null);
   const [schoolName, setSchoolName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasEESupervisorAccess, setHasEESupervisorAccess] = useState(false);
@@ -111,6 +112,28 @@ export default function TeacherPortal() {
     initTeacher();
   }, []);
 
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel('teacher-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'submissions' },
+        () => { loadTeacherData(user.id); }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'stimuli' },
+        () => { loadTeacherData(user.id); }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
   const initTeacher = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -118,6 +141,15 @@ export default function TeacherPortal() {
       return;
     }
     setUser(user);
+
+    // Öğretmenin profil bilgilerini çekelim
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+    setTeacherProfile(prof);
+
     await checkSchoolMembership(user.id);
     await checkEESupervisorAccess(user.id);
     await loadTeacherData(user.id);
@@ -241,6 +273,31 @@ export default function TeacherPortal() {
     await loadTeacherData(user.id);
   };
 
+  const handleDeleteSubmission = async (subId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Bu ödev gönderisini silmek istediğinize emin misiniz?')) return;
+    
+    const { error } = await supabase.from('submissions').delete().eq('id', subId);
+    if (error) {
+      alert('Gönderi silinirken hata oluştu: ' + error.message);
+    } else {
+      if (selectedSub?.id === subId) {
+        setSelectedSub(null);
+      }
+      await loadTeacherData(user.id);
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    if (!confirm('Bu atanan görevi silmek istediğinize emin misiniz?')) return;
+    const { error } = await supabase.from('stimuli').delete().eq('id', taskId);
+    if (error) {
+      alert('Görev silinirken hata oluştu: ' + error.message);
+    } else {
+      await loadTeacherData(user.id);
+    }
+  };
+
   const handleCopyCode = (code: string, id: string) => {
     navigator.clipboard.writeText(code);
     setCopiedCodeId(id);
@@ -336,9 +393,10 @@ export default function TeacherPortal() {
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading Teacher Portal...</div>;
 
   const pendingCount = submissions.filter(s => s.criterion_a_score === null).length;
+  const teacherDisplayName = teacherProfile?.full_name || user?.email?.split('@')[0] || 'Teacher';
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col">
+    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
       <header className="border-b bg-white sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -359,7 +417,6 @@ export default function TeacherPortal() {
               {pendingCount > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs">{pendingCount}</span>}
             </button>
 
-            {/* EE Supervisor Workspace Geçiş Butonu (Yalnızca kendisine EE öğrencisi atanmışsa görünür) */}
             {hasEESupervisorAccess && (
               <button 
                 onClick={() => router.push('/teacher/ee')} 
@@ -376,6 +433,50 @@ export default function TeacherPortal() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
+        {/* Banner with Real Books Photo Background */}
+        <div className="relative rounded-3xl overflow-hidden shadow-md border border-slate-200 text-white p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-slate-900">
+          <div className="absolute inset-0 z-0">
+            <img 
+              src="https://images.unsplash.com/photo-1497633762265-9d179a990aa6?auto=format&fit=crop&w=2000&q=80" 
+              alt="Library and Books" 
+              className="w-full h-full object-cover opacity-45"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-slate-950/80 via-slate-900/70 to-slate-950/80" />
+          </div>
+
+          <div className="space-y-2 relative z-10">
+            <span className="text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 bg-orange-600/90 text-white rounded-lg font-bold border border-orange-500/40 backdrop-blur-sm">
+              Teacher Command Center
+            </span>
+            {/* Giriş yapan öğretmenin adı dinamik olarak basılır */}
+            <h1 className="text-2xl md:text-3xl font-black text-white drop-shadow-md">
+              Welcome back, {teacherDisplayName}
+            </h1>
+            <p className="text-xs text-slate-200 max-w-xl drop-shadow">Manage your IBDP classes, assign tasks with deadlines, and evaluate student submissions using AI and color-coded feedback.</p>
+          </div>
+
+          <div className="flex items-center gap-3 relative z-10 shrink-0">
+            <div className="p-4 bg-slate-900/80 border border-slate-700/60 backdrop-blur-md rounded-2xl text-center shadow-lg min-w-[95px]">
+              <span className="text-[10px] font-mono uppercase text-slate-300 block">Classes</span>
+              <span className="text-xl font-black text-white inline-block">{classes.length}</span>
+            </div>
+
+            <div className="p-4 bg-orange-950/80 border border-orange-500/40 backdrop-blur-md rounded-2xl text-center shadow-lg min-w-[95px]">
+              <span className="text-[10px] font-mono uppercase text-orange-200 block">Submissions</span>
+              <span className="text-xl font-black text-orange-400 inline-block">{submissions.length}</span>
+            </div>
+
+            <div 
+              onClick={() => setActiveTab('submissions')}
+              className="p-4 bg-amber-950/80 hover:bg-amber-900/80 border border-amber-500/40 backdrop-blur-md rounded-2xl text-center relative cursor-pointer transition-all shadow-lg group min-w-[95px]"
+            >
+              {pendingCount > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full animate-ping" />}
+              <span className="text-[10px] font-mono uppercase text-amber-200 font-bold block">Pending</span>
+              <span className="text-xl font-black text-amber-400 group-hover:scale-105 transition-transform inline-block">{pendingCount}</span>
+            </div>
+          </div>
+        </div>
+
         {pendingCount > 0 && activeTab !== 'submissions' && (
           <div onClick={() => setActiveTab('submissions')} className="p-4 rounded-3xl bg-amber-500 text-white font-bold text-xs flex items-center justify-between shadow-md cursor-pointer hover:bg-amber-600 transition-all">
             <span>🔔 You have {pendingCount} new student submission(s) waiting for your review and grading!</span>
@@ -453,11 +554,20 @@ export default function TeacherPortal() {
                           <div
                             key={sub.id}
                             onClick={() => handleJumpToSubmission(sub)}
-                            className="p-4 rounded-2xl bg-slate-50 hover:bg-orange-50 border border-slate-200 cursor-pointer space-y-2 transition-all"
+                            className="p-4 rounded-2xl bg-slate-50 hover:bg-orange-50 border border-slate-200 cursor-pointer space-y-2 transition-all relative group"
                           >
                             <div className="flex items-center justify-between text-xs font-bold">
                               <span className="text-orange-700">{sub.chosen_text_type}</span>
-                              <span className="text-slate-600">{sub.word_count} words • AI Score: {totalAi}/30</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-600">{sub.word_count} words • AI Score: {totalAi}/30</span>
+                                <button
+                                  onClick={(e) => handleDeleteSubmission(sub.id, e)}
+                                  title="Delete submission"
+                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                >
+                                  🗑️
+                                </button>
+                              </div>
                             </div>
                             <p className="text-xs font-serif text-slate-800 line-clamp-2">{sub.content}</p>
                             <span className="text-[11px] text-orange-600 font-bold underline inline-block">Read &amp; Grade This Essay ➔</span>
@@ -472,65 +582,102 @@ export default function TeacherPortal() {
           </div>
         ) : activeTab === 'tasks' ? (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            <div className="lg:col-span-7 p-6 bg-white border rounded-3xl space-y-4 shadow-sm">
-              <h3 className="font-bold text-sm text-slate-900">Assign Task &amp; Stimulus to Class</h3>
-              <form onSubmit={handleSaveTask} className="space-y-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Target Classroom</label>
-                  <select value={targetClassId} onChange={e => setTargetClassId(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50 text-slate-900">
-                    {classes.map(c => <option key={c.id} value={c.id}>{c.class_name} ({c.join_code})</option>)}
-                  </select>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
+            <div className="lg:col-span-7 space-y-6">
+              <div className="p-6 bg-white border rounded-3xl space-y-4 shadow-sm">
+                <h3 className="font-bold text-sm text-slate-900">Assign Task &amp; Stimulus to Class</h3>
+                <form onSubmit={handleSaveTask} className="space-y-3">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Theme</label>
-                    <select value={taskTheme} onChange={e => {
-                      const th = e.target.value;
-                      setTaskTheme(th);
-                      if (PRESET_TEMPLATES[th]) {
-                        setTaskTitle(PRESET_TEMPLATES[th].title);
-                        setTaskPrompt(PRESET_TEMPLATES[th].prompt);
-                      }
-                    }} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50">{THEMES.map(th => <option key={th} value={th}>{th}</option>)}</select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Level</label>
-                    <select value={taskLevel} onChange={e => setTaskLevel(e.target.value as any)} className="w-full p-2.5 border rounded-xl text-xs font-bold bg-slate-50 text-orange-700"><option value="SL">Standard Level (SL)</option><option value="HL">Higher Level (HL)</option></select>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Task Title</label>
-                  <input type="text" placeholder="Task Title" value={taskTitle} onChange={e => setTaskTitle(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Task Prompt Scenario</label>
-                  <textarea rows={4} placeholder="Task Prompt Scenario..." value={taskPrompt} onChange={e => setTaskPrompt(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50" />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Deadline Date &amp; Time</label>
-                    <input type="datetime-local" value={taskDeadline} onChange={e => setTaskDeadline(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50" />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Allowed Text Types</label>
-                    <select onChange={e => {
-                      const val = e.target.value;
-                      if (val && !selectedTextTypes.includes(val)) setSelectedTextTypes([...selectedTextTypes, val]);
-                    }} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50">
-                      <option value="">+ Add Text Type</option>
-                      {TEXT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Target Classroom</label>
+                    <select value={targetClassId} onChange={e => setTargetClassId(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50 text-slate-900">
+                      {classes.map(c => <option key={c.id} value={c.id}>{c.class_name} ({c.join_code})</option>)}
                     </select>
                   </div>
-                </div>
-                <div className="flex flex-wrap gap-1 pt-1">
-                  {selectedTextTypes.map(t => (
-                    <span key={t} className="px-2 py-1 bg-orange-50 text-orange-800 rounded-lg text-[10px] font-bold border border-orange-200 flex items-center gap-1">
-                      {t} <button type="button" onClick={() => setSelectedTextTypes(selectedTextTypes.filter(x => x !== t))} className="text-rose-600 cursor-pointer">×</button>
-                    </span>
-                  ))}
-                </div>
-                <button type="submit" className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer">Assign Task with Deadline</button>
-              </form>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Theme</label>
+                      <select value={taskTheme} onChange={e => {
+                        const th = e.target.value;
+                        setTaskTheme(th);
+                        if (PRESET_TEMPLATES[th]) {
+                          setTaskTitle(PRESET_TEMPLATES[th].title);
+                          setTaskPrompt(PRESET_TEMPLATES[th].prompt);
+                        }
+                      }} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50">{THEMES.map(th => <option key={th} value={th}>{th}</option>)}</select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Level</label>
+                      <select value={taskLevel} onChange={e => setTaskLevel(e.target.value as any)} className="w-full p-2.5 border rounded-xl text-xs font-bold bg-slate-50 text-orange-700"><option value="SL">Standard Level (SL)</option><option value="HL">Higher Level (HL)</option></select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Task Title</label>
+                    <input type="text" placeholder="Task Title" value={taskTitle} onChange={e => setTaskTitle(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Task Prompt Scenario</label>
+                    <textarea rows={4} placeholder="Task Prompt Scenario..." value={taskPrompt} onChange={e => setTaskPrompt(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Deadline Date &amp; Time</label>
+                      <input type="datetime-local" value={taskDeadline} onChange={e => setTaskDeadline(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Allowed Text Types</label>
+                      <select onChange={e => {
+                        const val = e.target.value;
+                        if (val && !selectedTextTypes.includes(val)) setSelectedTextTypes([...selectedTextTypes, val]);
+                      }} className="w-full p-2.5 border rounded-xl text-xs bg-slate-50">
+                        <option value="">+ Add Text Type</option>
+                        {TEXT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {selectedTextTypes.map(t => (
+                      <span key={t} className="px-2 py-1 bg-orange-50 text-orange-800 rounded-lg text-[10px] font-bold border border-orange-200 flex items-center gap-1">
+                        {t} <button type="button" onClick={() => setSelectedTextTypes(selectedTextTypes.filter(x => x !== t))} className="text-rose-600 cursor-pointer">×</button>
+                      </span>
+                    ))}
+                  </div>
+                  <button type="submit" className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer">Assign Task with Deadline</button>
+                </form>
+              </div>
+
+              <div className="p-6 bg-white border rounded-3xl space-y-4 shadow-sm">
+                <h3 className="font-bold text-sm text-slate-900">📋 Previously Assigned Tasks ({assignedTasks.length})</h3>
+                {assignedTasks.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">No tasks assigned yet.</p>
+                ) : (
+                  <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                    {assignedTasks.map(task => {
+                      const clsObj = classes.find(c => c.id === task.class_id);
+                      return (
+                        <div key={task.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-100 text-orange-800">{task.theme} ({task.level})</span>
+                              {clsObj && <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">{clsObj.class_name}</span>}
+                            </div>
+                            <h4 className="text-xs font-black text-slate-900">{task.title}</h4>
+                            <p className="text-[11px] text-slate-600 line-clamp-2">{task.prompt}</p>
+                            {task.deadline && (
+                              <p className="text-[10px] text-rose-600 font-bold">⏰ Deadline: {new Date(task.deadline).toLocaleString()}</p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleDeleteTask(task.id)}
+                            title="Delete assigned task"
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer shrink-0"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="lg:col-span-5 space-y-4">
@@ -572,12 +719,21 @@ export default function TeacherPortal() {
                       className={`p-3.5 border rounded-2xl bg-white cursor-pointer relative transition-all ${isSelected ? 'border-orange-600 ring-2 ring-orange-500 shadow-sm bg-orange-50/30' : 'border-slate-200 hover:border-slate-300'}`}
                     >
                       {isPending ? (
-                        <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                        <span className="absolute top-2.5 right-8 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
                       ) : (
-                        <span className="absolute top-2.5 right-2.5 text-xs font-bold text-emerald-600">✓</span>
+                        <span className="absolute top-2.5 right-8 text-xs font-bold text-emerald-600">✓</span>
                       )}
-                      <div className="font-bold text-xs text-slate-900 truncate pr-4">{sub.profiles?.full_name || 'Student'}</div>
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
+
+                      <button
+                        onClick={(e) => handleDeleteSubmission(sub.id, e)}
+                        title="Delete submission"
+                        className="absolute top-2 right-2 p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer z-10"
+                      >
+                        🗑️
+                      </button>
+
+                      <div className="font-bold text-xs text-slate-900 truncate pr-8">{sub.profiles?.full_name || 'Student'}</div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1 pr-6">
                         <span className="font-semibold text-orange-700 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">{sub.chosen_text_type}</span>
                         <span>{sub.word_count}w</span>
                       </div>
@@ -593,8 +749,17 @@ export default function TeacherPortal() {
                   <div className="xl:col-span-7 p-6 bg-white border border-slate-200 rounded-3xl space-y-5 shadow-xl">
                     <div className="flex justify-between items-center border-b pb-4">
                       <div>
-                        <h3 className="font-black text-base text-slate-900">{selectedSub.profiles?.full_name}</h3>
-                        <p className="text-xs text-slate-500">Task Type: <span className="font-bold text-orange-700">{selectedSub.chosen_text_type}</span> • Total Words: <b>{selectedSub.word_count}</b></p>
+                        <div className="flex items-center gap-3">
+                          <h3 className="font-black text-base text-slate-900">{selectedSub.profiles?.full_name}</h3>
+                          <button
+                            onClick={(e) => handleDeleteSubmission(selectedSub.id, e)}
+                            title="Delete submission"
+                            className="px-2.5 py-1 text-xs text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1"
+                          >
+                            <span>🗑️</span> Delete
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">Task Type: <span className="font-bold text-orange-700">{selectedSub.chosen_text_type}</span> • Total Words: <b>{selectedSub.word_count}</b></p>
                       </div>
                       <div className="px-3 py-1.5 bg-orange-50 rounded-2xl border border-orange-200 text-center">
                         <span className="block text-[9px] font-bold text-orange-800 uppercase">AI Score</span>

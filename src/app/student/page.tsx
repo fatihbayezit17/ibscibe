@@ -12,6 +12,8 @@ interface StudentDashboardData {
   unreadCount: number;
   totalSubmissions: number;
   latestSubmissionWithFeedback: any | null;
+  assignedTasks: any[];
+  unreadTasksCount: number;
 }
 
 export default function StudentDashboardPortal() {
@@ -24,16 +26,41 @@ export default function StudentDashboardPortal() {
     hasEEAccess: false,
     unreadCount: 0,
     totalSubmissions: 0,
-    latestSubmissionWithFeedback: null
+    latestSubmissionWithFeedback: null,
+    assignedTasks: [],
+    unreadTasksCount: 0
   });
 
   const [joinCode, setJoinCode] = useState('');
   const [joinMsg, setJoinMsg] = useState('');
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [showTasksModal, setShowTasksModal] = useState(false);
 
   useEffect(() => {
     initDashboard();
   }, []);
+
+  useEffect(() => {
+    if (!data.profile?.id) return;
+
+    const channel = supabase
+      .channel('student-dashboard-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'submissions', filter: `student_id=eq.${data.profile.id}` },
+        () => { initDashboard(); }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'stimuli' },
+        () => { initDashboard(); }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [data.profile?.id]);
 
   const initDashboard = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -43,11 +70,23 @@ export default function StudentDashboardPortal() {
     }
 
     const defaultName = user.email?.split('@')[0] || 'Student User';
+    
     const { data: prof } = await supabase
       .from('profiles')
-      .upsert([{ id: user.id, full_name: defaultName, email: user.email }], { onConflict: 'id' })
+      .update({ full_name: defaultName, email: user.email })
+      .eq('id', user.id)
       .select()
       .single();
+
+    let profileData = prof;
+    if (!profileData) {
+      const { data: newProf } = await supabase
+        .from('profiles')
+        .insert([{ id: user.id, full_name: defaultName, email: user.email, role: 'student' }])
+        .select()
+        .single();
+      profileData = newProf;
+    }
 
     let sName = null;
     const { data: mem } = await supabase
@@ -72,6 +111,7 @@ export default function StudentDashboardPortal() {
       .select('classes(id, class_name, join_code)')
       .eq('student_id', user.id);
     const clsList = (classMem || []).map((item: any) => item.classes).filter(Boolean);
+    const classIds = clsList.map(c => c.id);
 
     const { data: subs } = await supabase
       .from('submissions')
@@ -82,14 +122,29 @@ export default function StudentDashboardPortal() {
     const unreadSubs = (subs || []).filter(s => s.teacher_feedback && s.is_read_by_student === false);
     const latestWithFeedback = (subs || []).find(s => s.teacher_feedback) || null;
 
+    let tasksList: any[] = [];
+    if (classIds.length > 0) {
+      const { data: tData } = await supabase
+        .from('stimuli')
+        .select('*')
+        .in('class_id', classIds)
+        .order('id', { ascending: false });
+      tasksList = tData || [];
+    }
+
+    const readTaskIds = JSON.parse(localStorage.getItem('read_task_ids_sevval') || '[]');
+    const unreadTasks = tasksList.filter(t => !readTaskIds.includes(t.id));
+
     setData({
-      profile: prof || { full_name: defaultName, email: user.email },
+      profile: profileData,
       schoolName: sName,
       enrolledClasses: clsList,
       hasEEAccess: eeAccess,
       unreadCount: unreadSubs.length,
       totalSubmissions: (subs || []).length,
-      latestSubmissionWithFeedback: latestWithFeedback
+      latestSubmissionWithFeedback: latestWithFeedback,
+      assignedTasks: tasksList,
+      unreadTasksCount: unreadTasks.length
     });
 
     setLoading(false);
@@ -100,42 +155,42 @@ export default function StudentDashboardPortal() {
     setJoinMsg('');
     if (!joinCode.trim()) return;
 
-    const { data: classObj, error: classErr } = await supabase
-      .from('classes')
-      .select('id, class_name, school_id')
-      .eq('join_code', joinCode.trim().toUpperCase())
-      .single();
+    try {
+      const { data: resData, error: rpcError } = await supabase.rpc('join_class_by_code', {
+        p_join_code: joinCode.trim(),
+        p_student_id: data.profile.id
+      });
 
-    if (classErr || !classObj) {
-      setJoinMsg('Invalid class code.');
-      return;
-    }
-
-    if (classObj.school_id) {
-      const { data: existingMem } = await supabase
-        .from('school_memberships')
-        .select('id')
-        .eq('user_id', data.profile.id)
-        .maybeSingle();
-
-      if (!existingMem) {
-        await supabase.from('school_memberships').insert([{
-          school_id: classObj.school_id,
-          user_id: data.profile.id,
-          role: 'student'
-        }]);
+      if (rpcError) {
+        setJoinMsg('Error: ' + rpcError.message);
+        return;
       }
-    }
 
-    const { error: joinErr } = await supabase.from('class_members').upsert([
-      { class_id: classObj.id, student_id: data.profile.id }
-    ], { onConflict: 'class_id,student_id' });
+      if (resData && !resData.success) {
+        setJoinMsg(resData.error || 'Invalid code.');
+        return;
+      }
 
-    if (joinErr) {
-      setJoinMsg(joinErr.message);
-    } else {
-      setJoinMsg(`Successfully joined ${classObj.class_name}!`);
+      setJoinMsg(`Joined ${resData.className}!`);
       setJoinCode('');
+      await initDashboard();
+    } catch (err: any) {
+      setJoinMsg('Error: ' + err.message);
+    }
+  };
+
+  const handleLeaveClass = async (classId: string) => {
+    if (!confirm('Are you sure you want to leave this class?')) return;
+    
+    const { error } = await supabase
+      .from('class_members')
+      .delete()
+      .eq('class_id', classId)
+      .eq('student_id', data.profile.id);
+
+    if (error) {
+      alert('Error leaving class: ' + error.message);
+    } else {
       await initDashboard();
     }
   };
@@ -145,12 +200,22 @@ export default function StudentDashboardPortal() {
       alert('No teacher feedback available yet.');
       return;
     }
-    // Okundu olarak işaretleyelim
     if (data.latestSubmissionWithFeedback.is_read_by_student === false) {
       await supabase.from('submissions').update({ is_read_by_student: true }).eq('id', data.latestSubmissionWithFeedback.id);
       setData(prev => ({ ...prev, unreadCount: 0 }));
     }
     setShowFeedbackModal(true);
+  };
+
+  const handleOpenTasks = () => {
+    if (data.assignedTasks.length === 0) {
+      alert('No assigned tasks from your teachers yet.');
+      return;
+    }
+    const allIds = data.assignedTasks.map(t => t.id);
+    localStorage.setItem('read_task_ids_sevval', JSON.stringify(allIds));
+    setData(prev => ({ ...prev, unreadTasksCount: 0 }));
+    setShowTasksModal(true);
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-600">Loading Student Portal...</div>;
@@ -161,15 +226,41 @@ export default function StudentDashboardPortal() {
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
       <header className="border-b bg-white sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-3 flex-wrap gap-y-2">
             <div className="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-bold text-white shadow-sm">IB</div>
             <span className="font-bold text-slate-900">IBDP Student Portal</span>
+            
+            {/* Okul ve Sınıf Rozetleri Üst Header'da */}
             {data.schoolName && (
               <span className="text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
                 🏫 {data.schoolName}
               </span>
             )}
+
+            {data.enrolledClasses.map(c => (
+              <span key={c.id} className="text-xs px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-bold border border-emerald-200 flex items-center gap-1.5">
+                <span>✓ {c.class_name}</span>
+                <span className="text-[10px] font-mono bg-white px-1.5 py-0.2 rounded border text-slate-600">{c.join_code}</span>
+                <button onClick={() => handleLeaveClass(c.id)} className="text-rose-600 hover:text-rose-800 font-black cursor-pointer" title="Leave class">×</button>
+              </span>
+            ))}
+
+            {/* Sınıf Yoksa Hızlı Kod Girme Alanı */}
+            {data.enrolledClasses.length === 0 && (
+              <form onSubmit={handleJoinClass} className="flex items-center gap-1.5">
+                <input 
+                  type="text" 
+                  placeholder="CLASS CODE (e.g. IB-1234)" 
+                  value={joinCode} 
+                  onChange={e => setJoinCode(e.target.value)} 
+                  className="px-2.5 py-1 border rounded-lg text-[11px] uppercase bg-slate-50 font-mono w-40" 
+                />
+                <button type="submit" className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg shadow-xs cursor-pointer">Join</button>
+              </form>
+            )}
+            {joinMsg && <span className="text-[11px] font-bold text-orange-600">{joinMsg}</span>}
           </div>
+
           <div className="flex items-center space-x-3">
             <span className="text-xs font-semibold text-slate-600 hidden sm:inline">{data.profile?.full_name}</span>
             <button 
@@ -182,7 +273,7 @@ export default function StudentDashboardPortal() {
         </div>
       </header>
 
-      {/* New Feedback Detay Modal Penceresi (Öğrenci Kendi Anasayfasında Görür) */}
+      {/* Feedback Modal */}
       {showFeedbackModal && sub && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -236,71 +327,95 @@ export default function StudentDashboardPortal() {
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
-        {/* Karşılama ve Durum Kartları */}
-        <div className="p-8 bg-white border rounded-3xl shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <span className="text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 bg-orange-50 text-orange-700 rounded-lg font-bold border border-orange-200">
-              Student Command Center
-            </span>
-            <h1 className="text-2xl font-black text-slate-900">Welcome back, {data.profile?.full_name}</h1>
-            <p className="text-xs text-slate-500">Manage your classrooms, join via class code, and access your IBDP exam modules below.</p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* Submissions Kartı -> Tıklanamaz, sadece sayı gösterir */}
-            <div className="p-4 bg-slate-50 border rounded-2xl text-center shadow-xs">
-              <span className="text-[10px] font-mono uppercase text-slate-400 block">Submissions</span>
-              <span className="text-xl font-black text-slate-900 inline-block">{data.totalSubmissions}</span>
+      {/* Assigned Tasks Modal */}
+      {showTasksModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b pb-4">
+              <div>
+                <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs font-bold rounded-full border border-indigo-200">Teacher Assignments</span>
+                <h3 className="text-lg font-black mt-1">Assigned Tasks &amp; Stimuli</h3>
+              </div>
+              <button onClick={() => setShowTasksModal(false)} className="px-3 py-1.5 bg-slate-100 rounded-xl text-xs font-bold cursor-pointer">Close ✕</button>
             </div>
 
-            {/* New Feedback Kartı -> Tıklandığında doğrudan son feedback'i açar */}
-            <div 
-              onClick={handleOpenFeedback}
-              className="p-4 bg-orange-50/50 hover:bg-orange-100/60 border border-orange-200 rounded-2xl text-center relative cursor-pointer transition-all shadow-xs group"
-            >
-              {data.unreadCount > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-600 rounded-full animate-ping" />}
-              <span className="text-[10px] font-mono uppercase text-orange-700 font-bold block">New Feedback</span>
-              <span className="text-xl font-black text-orange-600 group-hover:scale-105 transition-transform inline-block">{data.unreadCount}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Tek Kod ile Sınıf ve Okul Kayıt Alanı */}
-        <div className="p-6 bg-white border rounded-3xl shadow-sm space-y-3">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <h3 className="font-bold text-xs text-slate-900 uppercase">Classroom &amp; School Enrolment ({data.enrolledClasses.length})</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Enter your class code provided by your teacher to automatically join your class and school license.</p>
-            </div>
-            <form onSubmit={handleJoinClass} className="flex gap-2 w-full md:w-auto">
-              <input 
-                type="text" 
-                placeholder="ENTER CLASS CODE (e.g. IB-1234)" 
-                value={joinCode} 
-                onChange={e => setJoinCode(e.target.value)} 
-                className="px-4 py-2 border rounded-xl text-xs uppercase bg-slate-50 font-mono flex-1 md:w-64" 
-              />
-              <button type="submit" className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm cursor-pointer whitespace-nowrap">Join Class</button>
-            </form>
-          </div>
-
-          {data.enrolledClasses.length > 0 ? (
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
-              {data.enrolledClasses.map(c => (
-                <span key={c.id} className="px-3.5 py-2 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
-                  <span>✓ Enrolled: {c.class_name}</span>
-                  <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border text-slate-600">Code: {c.join_code}</span>
-                </span>
+            <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
+              {data.assignedTasks.map(task => (
+                <div key={task.id} className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 flex flex-col justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-100 text-orange-800">{task.theme} ({task.level})</span>
+                      {task.deadline && <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">⏰ {new Date(task.deadline).toLocaleString()}</span>}
+                    </div>
+                    <h4 className="font-extrabold text-sm text-slate-900">{task.title}</h4>
+                    <p className="text-xs text-slate-600 leading-relaxed">{task.prompt}</p>
+                  </div>
+                  <div className="pt-3 border-t border-slate-200 flex justify-end">
+                    <button
+                      onClick={() => {
+                        setShowTasksModal(false);
+                        router.push('/student/paper1');
+                      }}
+                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm cursor-pointer transition-all"
+                    >
+                      Go to Paper 1 Exam Environment ➔
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
-          ) : (
-            <p className="text-xs text-slate-400 italic pt-1">You are not enrolled in any class yet. Enter your class code above.</p>
-          )}
-          {joinMsg && <div className="p-2.5 bg-orange-50 text-xs text-orange-800 rounded-xl border border-orange-200">{joinMsg}</div>}
+
+            <button onClick={() => setShowTasksModal(false)} className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl shadow-md cursor-pointer">Close Window</button>
+          </div>
+        </div>
+      )}
+
+      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
+        {/* Banner with Real Photo Background */}
+        <div className="relative rounded-3xl overflow-hidden shadow-md border border-slate-200 text-white p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-slate-900">
+          <div className="absolute inset-0 z-0">
+            <img 
+              src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=2000&q=80" 
+              alt="" 
+              className="w-full h-full object-cover opacity-25 mix-blend-overlay"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-900/80 to-transparent" />
+          </div>
+
+          <div className="space-y-2 relative z-10">
+            <span className="text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 bg-orange-600/80 text-white rounded-lg font-bold border border-orange-500/30 backdrop-blur-sm">
+              Student Command Center
+            </span>
+            <h1 className="text-2xl md:text-3xl font-black text-white">Welcome back, {data.profile?.full_name}</h1>
+            <p className="text-xs text-slate-300 max-w-xl">Manage your classrooms, review teacher feedback, and access your IBDP exam modules below.</p>
+          </div>
+
+          <div className="flex items-center gap-3 relative z-10 shrink-0">
+            <div 
+              onClick={handleOpenTasks}
+              className="p-4 bg-indigo-900/80 hover:bg-indigo-800/90 border border-indigo-500/30 backdrop-blur-md rounded-2xl text-center relative cursor-pointer transition-all shadow-md group min-w-[95px]"
+            >
+              {data.unreadTasksCount > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-indigo-400 rounded-full animate-ping" />}
+              <span className="text-[10px] font-mono uppercase text-indigo-200 font-bold block">Assigned Tasks</span>
+              <span className="text-xl font-black text-white group-hover:scale-105 transition-transform inline-block">{data.assignedTasks.length}</span>
+            </div>
+
+            <div className="p-4 bg-slate-800/80 border border-slate-700/50 backdrop-blur-md rounded-2xl text-center shadow-md min-w-[95px]">
+              <span className="text-[10px] font-mono uppercase text-slate-400 block">Submissions</span>
+              <span className="text-xl font-black text-white inline-block">{data.totalSubmissions}</span>
+            </div>
+
+            <div 
+              onClick={handleOpenFeedback}
+              className="p-4 bg-orange-950/80 hover:bg-orange-900/80 border border-orange-500/30 backdrop-blur-md rounded-2xl text-center relative cursor-pointer transition-all shadow-md group min-w-[95px]"
+            >
+              {data.unreadCount > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full animate-ping" />}
+              <span className="text-[10px] font-mono uppercase text-orange-300 font-bold block">New Feedback</span>
+              <span className="text-xl font-black text-orange-400 group-hover:scale-105 transition-transform inline-block">{data.unreadCount}</span>
+            </div>
+          </div>
         </div>
 
-        {/* Paper 1 ve EE Kartları */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
           <div 
             onClick={() => router.push('/student/paper1')}

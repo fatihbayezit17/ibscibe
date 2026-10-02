@@ -14,8 +14,14 @@ interface SchoolLicense {
   created_at: string;
 }
 
+const SUPER_ADMIN_PASS = 'nVb+101622';
+
 export default function SuperAdminPortal() {
   const router = useRouter();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [inputPass, setInputPass] = useState('');
+  const [passError, setPassError] = useState('');
+
   const [loading, setLoading] = useState(true);
   const [schools, setSchools] = useState<SchoolLicense[]>([]);
 
@@ -26,8 +32,27 @@ export default function SuperAdminPortal() {
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
-    loadSchools();
+    const authState = sessionStorage.getItem('super_admin_auth');
+    if (authState === 'true') {
+      setIsAuthenticated(true);
+      loadSchools();
+    } else {
+      setLoading(false);
+    }
   }, []);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPassError('');
+    if (inputPass === SUPER_ADMIN_PASS) {
+      sessionStorage.setItem('super_admin_auth', 'true');
+      setIsAuthenticated(true);
+      setLoading(true);
+      loadSchools();
+    } else {
+      setPassError('Incorrect Super Admin password. Access denied.');
+    }
+  };
 
   const loadSchools = async () => {
     const { data } = await supabase.from('school_licenses').select('*').order('created_at', { ascending: false });
@@ -122,6 +147,41 @@ export default function SuperAdminPortal() {
     }
   };
 
+  // Şifre girilmediyse şifre kilit ekranını göster
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-3xl p-8 max-w-md w-full space-y-6 shadow-2xl">
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 bg-rose-600 rounded-2xl mx-auto flex items-center justify-center text-xl font-black shadow-lg">⚡</div>
+            <h2 className="text-xl font-black tracking-tight">Super Admin Security Portal</h2>
+            <p className="text-xs text-slate-400">Please enter your master super admin security password to proceed.</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <input
+                type="password"
+                placeholder="Enter Super Admin Password"
+                value={inputPass}
+                onChange={e => setInputPass(e.target.value)}
+                className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-rose-500 font-mono"
+                autoFocus
+              />
+            </div>
+            {passError && <div className="p-3 bg-rose-950/80 border border-rose-800 text-rose-300 text-xs rounded-xl font-semibold">{passError}</div>}
+            <button type="submit" className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer">
+              Authenticate Access ➔
+            </button>
+          </form>
+          <div className="text-center pt-2">
+            <button onClick={() => router.push('/auth')} className="text-xs text-slate-400 hover:text-white underline cursor-pointer">← Back to Auth / Login</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading Super Admin...</div>;
 
   return (
@@ -132,7 +192,15 @@ export default function SuperAdminPortal() {
             <div className="w-8 h-8 rounded-lg bg-rose-600 flex items-center justify-center font-bold text-white shadow-sm">⚡</div>
             <span className="font-bold">System Super Admin (Platform Management)</span>
           </div>
-          <button onClick={() => { window.location.href = '/auth'; }} className="px-3 py-1.5 border text-xs bg-white rounded-lg text-slate-600 shadow-sm cursor-pointer">Sign Out</button>
+          <button 
+            onClick={() => { 
+              sessionStorage.removeItem('super_admin_auth');
+              window.location.href = '/auth'; 
+            }} 
+            className="px-3 py-1.5 border text-xs bg-white rounded-lg text-slate-600 shadow-sm cursor-pointer hover:bg-slate-50 font-bold"
+          >
+            Sign Out
+          </button>
         </div>
       </header>
 

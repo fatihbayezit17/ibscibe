@@ -35,6 +35,8 @@ interface Submission {
   teacher_highlights?: any[];
   is_read_by_student: boolean | null;
   created_at: string;
+  prompt_text?: string | null;
+  stimulus_theme?: string | null;
   stimuli?: { title: string; theme: string } | null;
 }
 
@@ -97,7 +99,8 @@ export default function StudentPaper1Portal() {
 
   const [enrolledClasses, setEnrolledClasses] = useState<any[]>([]);
   const [enrolledClassIds, setEnrolledClassIds] = useState<string[]>([]);
-  const [selectedSubmissionClassId, setSelectedSubmissionClassId] = useState<string>('');
+  const [joinCode, setJoinCode] = useState('');
+  const [joinMsg, setJoinMsg] = useState('');
 
   const [activeTab, setActiveTab] = useState<'write' | 'portfolio'>('write');
   const [level, setLevel] = useState<'SL' | 'HL'>('SL');
@@ -201,9 +204,6 @@ export default function StudentPaper1Portal() {
       setEnrolledClasses(clsList);
       classIds = clsList.map((c: any) => c.id);
       setEnrolledClassIds(classIds);
-      if (!selectedSubmissionClassId && clsList.length > 0) {
-        setSelectedSubmissionClassId(clsList[0].id);
-      }
     } else {
       setEnrolledClasses([]);
       setEnrolledClassIds([]);
@@ -226,7 +226,19 @@ export default function StudentPaper1Portal() {
     }
 
     const { data: stimData } = await supabase.from('stimuli').select('*');
-    const combinedStimuli = [...EXACT_IB_PAPER1_POOL, ...(stimData || [])];
+    const { data: questionsData } = await supabase.from('questions').select('*');
+    
+    const convertedQuestions: Stimulus[] = (questionsData || []).map((q: any) => ({
+      id: q.id,
+      theme: 'Paper 1 Practice',
+      level: q.level || 'SL',
+      title: `${q.text_type} Practice Task`,
+      prompt: q.prompt_text,
+      text_options: q.text_options && q.text_options.length > 0 ? q.text_options : [q.text_type, 'Blog', 'Essay'],
+      class_id: null
+    }));
+
+    const combinedStimuli = [...EXACT_IB_PAPER1_POOL, ...(stimData || []), ...convertedQuestions];
     
     setAllStimuli(combinedStimuli);
     const assigned = combinedStimuli.filter(s => s.class_id && classIds.includes(s.class_id));
@@ -236,6 +248,51 @@ export default function StudentPaper1Portal() {
       startReadingPhase(assigned[0]);
     } else {
       pickRandomStimulus(combinedStimuli, 'SL', 'All Text Types', classIds);
+    }
+  };
+
+  const handleJoinClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setJoinMsg('');
+    if (!joinCode.trim() || !profile) return;
+
+    try {
+      const { data: resData, error: rpcError } = await supabase.rpc('join_class_by_code', {
+        p_join_code: joinCode.trim(),
+        p_student_id: profile.id
+      });
+
+      if (rpcError) {
+        setJoinMsg('Error: ' + rpcError.message);
+        return;
+      }
+
+      if (resData && !resData.success) {
+        setJoinMsg(resData.error || 'Invalid code.');
+        return;
+      }
+
+      setJoinMsg(`Joined ${resData.className}!`);
+      setJoinCode('');
+      await loadStudentData(profile.id);
+    } catch (err: any) {
+      setJoinMsg('Error: ' + err.message);
+    }
+  };
+
+  const handleLeaveClass = async (classId: string) => {
+    if (!confirm('Are you sure you want to leave this class?')) return;
+    
+    const { error } = await supabase
+      .from('class_members')
+      .delete()
+      .eq('class_id', classId)
+      .eq('student_id', profile.id);
+
+    if (error) {
+      alert('Error leaving class: ' + error.message);
+    } else {
+      await loadStudentData(profile.id);
     }
   };
 
@@ -258,7 +315,7 @@ export default function StudentPaper1Portal() {
     const filtered = list.filter(s => {
       if (s.class_id && !classIds.includes(s.class_id)) return false;
       const matchLevel = s.level === lvl;
-      const matchType = textTypeFilter === 'All Text Types' || s.text_options?.includes(textTypeFilter);
+      const matchType = textTypeFilter === 'All Text Types' || s.text_options?.some(opt => opt.toLowerCase() === textTypeFilter.toLowerCase());
       return matchLevel && matchType;
     });
 
@@ -280,6 +337,21 @@ export default function StudentPaper1Portal() {
     await loadStudentData(user.id);
     if (selectedPortfolioSub?.id === subId) {
       setSelectedPortfolioSub(prev => prev ? { ...prev, is_read_by_student: true } : null);
+    }
+  };
+
+  const handleDeleteSubmission = async (subId: string) => {
+    if (!confirm('Are you sure you want to delete this submission? This action cannot be undone.')) return;
+
+    try {
+      const { error } = await supabase.from('submissions').delete().eq('id', subId);
+      if (error) throw error;
+
+      alert('Submission successfully deleted.');
+      setSelectedPortfolioSub(null);
+      await loadStudentData(user.id);
+    } catch (err: any) {
+      alert('Error deleting submission: ' + err.message);
     }
   };
 
@@ -327,9 +399,8 @@ export default function StudentPaper1Portal() {
       return;
     }
 
-    if (enrolledClasses.length > 0 && !selectedSubmissionClassId) {
-      alert('Please select which class teacher you want to submit this essay to.');
-      return;
+    if (enrolledClasses.length === 0) {
+      alert('Uyarı: Herhangi bir sınıfa kayıtlı olmadığınız için gerçek öğretmen geri bildirimi alamayacaksınız. Ödeviniz sadece AI tarafından değerlendirilecektir.');
     }
 
     setSubmitting(true);
@@ -352,7 +423,7 @@ export default function StudentPaper1Portal() {
       const scoreC = aiData.scoreC || 3;
       const feedback = aiData.feedback || 'Evaluated successfully.';
 
-      const targetClassId = selectedSubmissionClassId || enrolledClasses[0]?.id || null;
+      const targetClassId = enrolledClasses.length > 0 ? (enrolledClasses[0]?.id || null) : null;
 
       const insertPayload: any = {
         student_id: user.id,
@@ -365,7 +436,9 @@ export default function StudentPaper1Portal() {
         ai_score_b: scoreB,
         ai_score_c: scoreC,
         ai_feedback: feedback,
-        is_read_by_student: false
+        is_read_by_student: false,
+        prompt_text: selectedStimulus.prompt,
+        stimulus_theme: selectedStimulus.theme
       };
 
       const { error: subErr } = await supabase.from('submissions').insert([insertPayload]);
@@ -412,23 +485,50 @@ export default function StudentPaper1Portal() {
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading Paper 1 Environment...</div>;
 
   const unreadFeedbackCount = submissions.filter(s => s.teacher_feedback && s.is_read_by_student === false).length;
-  const all17TextList = ['Speech', 'Essay', 'Blog', 'Proposal', 'Review', 'Article', 'Letter to the editor', 'Diary', 'Brochure/leaflet/pamphlet', 'Official report', 'Set of instructions/guidelines', 'Opinion column/editorial', 'Personal correspondence (email/letter)'];
+  const all17TextList = ['Speech', 'Essay', 'Blog', 'Proposal', 'Review', 'Article', 'Letter to the editor', 'Diary', 'Brochure/leaflet/pamphlet', 'Official report', 'Set of instructions/guidelines', 'Opinion column/editorial', 'Personal correspondence (email/letter)', 'E-mail', 'Personal letter', 'Leaflet', 'Set of instructions'];
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col">
       <header className="border-b bg-white sticky top-0 z-40 shadow-sm print:hidden">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <button onClick={() => router.push('/student')} className="px-3 py-1.5 border text-xs bg-white rounded-xl text-slate-600 font-bold hover:bg-slate-50 shadow-xs cursor-pointer">
+          <div className="flex items-center space-x-3 flex-wrap gap-y-2">
+            <button
+              onClick={() => router.push('/student')}
+              className="px-3 py-1.5 border text-xs bg-white rounded-xl text-slate-600 font-bold hover:bg-slate-50 shadow-xs inline-flex items-center cursor-pointer"
+            >
               ← Back to Portal
             </button>
             <span className="font-bold text-slate-900">English B Paper 1 Exam Environment</span>
+            
             {schoolName && (
               <span className="text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
                 🏫 {schoolName}
               </span>
             )}
+
+            {enrolledClasses.map(c => (
+              <span key={c.id} className="text-xs px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-bold border border-emerald-200 flex items-center gap-1.5">
+                <span>✓ {c.class_name}</span>
+                <span className="text-[10px] font-mono bg-white px-1.5 py-0.2 rounded border text-slate-600">{c.join_code}</span>
+                <button onClick={() => handleLeaveClass(c.id)} className="text-rose-600 hover:text-rose-800 font-black cursor-pointer" title="Leave class">×</button>
+              </span>
+            ))}
+
+            {enrolledClasses.length === 0 && (
+              <form onSubmit={handleJoinClass} className="flex items-center gap-1.5">
+                <input 
+                  type="text" 
+                  placeholder="CLASS CODE (e.g. IB-1234)" 
+                  value={joinCode} 
+                  onChange={e => setJoinCode(e.target.value)} 
+                  className="px-2.5 py-1 border rounded-lg text-[11px] uppercase bg-slate-50 font-mono w-36" 
+                />
+                <button type="submit" className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg shadow-xs cursor-pointer">Join</button>
+              </form>
+            )}
+            {joinMsg && <span className="text-[11px] font-bold text-orange-600">{joinMsg}</span>}
           </div>
+
           <div className="flex items-center space-x-3">
             <button onClick={() => setActiveTab('write')} className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${activeTab === 'write' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>Write &amp; Practice</button>
             <button onClick={() => setActiveTab('portfolio')} className={`px-4 py-2 rounded-xl text-sm font-semibold relative transition-all cursor-pointer ${activeTab === 'portfolio' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
@@ -443,7 +543,6 @@ export default function StudentPaper1Portal() {
         </div>
       </header>
 
-      {/* AI Değerlendirme Sonuç Modalı */}
       {evaluationModalData && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -467,7 +566,7 @@ export default function StudentPaper1Portal() {
             </div>
             <div className="p-5 bg-slate-50 rounded-2xl text-xs whitespace-pre-line leading-relaxed border border-slate-200">{evaluationModalData.feedback}</div>
             <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 font-semibold text-center">
-              ⏳ Teacher Feedback: <b>Awaiting teacher evaluation and grading...</b>
+              ⏳ Teacher Feedback: <b>{enrolledClasses.length > 0 ? 'Awaiting teacher evaluation and grading...' : 'Not applicable (No classroom enrolment - AI evaluation only).'}</b>
             </div>
             <button onClick={() => { setEvaluationModalData(null); setActiveTab('portfolio'); }} className="w-full py-3 bg-orange-600 text-white font-bold rounded-xl shadow-md cursor-pointer">Go to Portfolio ➔</button>
           </div>
@@ -475,9 +574,41 @@ export default function StudentPaper1Portal() {
       )}
 
       <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6 print:p-0">
+        {activeTab === 'portfolio' && (
+          <div className="relative rounded-3xl overflow-hidden shadow-md border border-slate-200 text-white p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-slate-900 print:hidden">
+            <div className="absolute inset-0 z-0">
+              <img 
+                src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=2000&q=80" 
+                alt="" 
+                className="w-full h-full object-cover opacity-25 mix-blend-overlay"
+              />
+              <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-900/80 to-transparent" />
+            </div>
+
+            <div className="space-y-2 relative z-10">
+              <span className="text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 bg-orange-600/80 text-white rounded-lg font-bold border border-orange-500/30 backdrop-blur-sm">
+                Student Archive
+              </span>
+              <h1 className="text-2xl md:text-3xl font-black text-white">My Writing Submissions &amp; Feedback Portfolio</h1>
+              <p className="text-xs text-slate-300 max-w-xl">Review your essay history, check AI and teacher assessments, and submit revisions for your IBDP English B coursework.</p>
+            </div>
+
+            <div className="flex items-center gap-3 relative z-10 shrink-0">
+              <div className="p-4 bg-slate-800/80 border border-slate-700/50 backdrop-blur-md rounded-2xl text-center shadow-md min-w-[95px]">
+                <span className="text-[10px] font-mono uppercase text-slate-400 block">Total Submissions</span>
+                <span className="text-xl font-black text-white inline-block">{submissions.length}</span>
+              </div>
+              <div className="p-4 bg-orange-950/80 border border-orange-500/30 backdrop-blur-md rounded-2xl text-center shadow-md min-w-[95px]">
+                <span className="text-[10px] font-mono uppercase text-orange-300 block">Unread Feedback</span>
+                <span className="text-xl font-black text-orange-400 inline-block">{unreadFeedbackCount}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex items-center justify-between gap-4 print:hidden">
           <div className="text-xs font-bold text-slate-700">
-            Enrolled Classes: {enrolledClasses.length > 0 ? enrolledClasses.map(c => c.class_name).join(', ') : 'None (Using Default Pool)'}
+            Practice Level &amp; Filters:
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -589,24 +720,6 @@ export default function StudentPaper1Portal() {
                     </div>
                   </div>
 
-                  {enrolledClasses.length > 0 && (
-                    <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-2xl flex items-center justify-between gap-4">
-                      <div>
-                        <h5 className="text-xs font-bold text-indigo-900 uppercase">Target Classroom / Teacher</h5>
-                        <p className="text-[11px] text-indigo-700">Select which enrolled class this submission belongs to.</p>
-                      </div>
-                      <select
-                        value={selectedSubmissionClassId}
-                        onChange={e => setSelectedSubmissionClassId(e.target.value)}
-                        className="px-3 py-2 bg-white border border-indigo-300 rounded-xl text-xs font-bold text-indigo-900 focus:outline-none"
-                      >
-                        {enrolledClasses.map(cls => (
-                          <option key={cls.id} value={cls.id}>{cls.class_name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
                   <button onClick={handleSubmitEssay} disabled={submitting || !selectedTextType || !essayContent.trim() || examPhase === 'reading'} className="w-full py-4 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-bold rounded-2xl shadow-lg shadow-orange-500/20 transition-all disabled:opacity-40 cursor-pointer">
                     {submitting ? 'Evaluating with AI & Submitting...' : 'Submit'}
                   </button>
@@ -616,10 +729,7 @@ export default function StudentPaper1Portal() {
           </div>
         ) : (
           <div className="space-y-6">
-            <h3 className="text-xl font-extrabold print:hidden">My Writing Submissions &amp; Feedback Portfolio</h3>
             {submissions.length === 0 ? <div className="p-12 text-center bg-white rounded-2xl border text-slate-500 text-sm">You have not submitted any essays yet.</div> : (
-              
-              /* GÜNCELLENEN KISIM: Sol liste dar (col-span-4), sağ detay alanı geniş (col-span-8) */
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                 <div className={`space-y-3 ${selectedPortfolioSub ? 'lg:col-span-4' : 'lg:col-span-12'} print:hidden`}>
                   {submissions.map(sub => {
@@ -630,8 +740,14 @@ export default function StudentPaper1Portal() {
                         {showNotif && <span className="absolute top-3 right-3 px-2 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full animate-bounce">New Feedback!</span>}
                         <span className="px-3 py-1 bg-orange-100 text-orange-800 text-xs font-bold rounded-full border border-orange-200">{sub.chosen_text_type}</span>
                         <h4 className="text-xs font-bold text-slate-900 mt-2">{sub.word_count} words • AI Score: {totalAi}/30</h4>
-                        {sub.criterion_a_score !== null && (
-                          <span className="text-[11px] font-bold text-emerald-700 block mt-1">✓ Teacher Graded: {(sub.criterion_a_score || 0) + (sub.criterion_b_score || 0) + (sub.criterion_c_score || 0)}/30</span>
+                        {sub.class_id ? (
+                          sub.criterion_a_score !== null ? (
+                            <span className="text-[11px] font-bold text-emerald-700 block mt-1">✓ Teacher Graded: {(sub.criterion_a_score || 0) + (sub.criterion_b_score || 0) + (sub.criterion_c_score || 0)}/30</span>
+                          ) : (
+                            <span className="text-[11px] font-medium text-amber-600 block mt-1">⏳ Awaiting Teacher Feedback</span>
+                          )
+                        ) : (
+                          <span className="text-[11px] font-medium text-slate-400 block mt-1">🤖 AI Only (No Classroom)</span>
                         )}
                       </div>
                     );
@@ -643,15 +759,34 @@ export default function StudentPaper1Portal() {
                     <div className="flex justify-between items-center border-b border-slate-100 pb-4 print:hidden">
                       <h3 className="font-bold text-sm text-slate-900">{selectedPortfolioSub.chosen_text_type}</h3>
                       <div className="flex gap-2">
-                        {!isResubmitting && (
+                        {selectedPortfolioSub.class_id && !isResubmitting && (
                           <button onClick={() => { setIsResubmitting(true); setResubmitContent(selectedPortfolioSub.content); }} className="px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold cursor-pointer">
                             Revise &amp; Resubmit ➔
                           </button>
                         )}
+                        <button onClick={() => handleDeleteSubmission(selectedPortfolioSub.id)} className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold cursor-pointer">
+                          Delete Essay 🗑️
+                        </button>
                         <button onClick={() => window.print()} className="px-3.5 py-2 bg-slate-900 text-white rounded-xl text-xs font-semibold cursor-pointer">Print PDF</button>
                         <button onClick={() => { setSelectedPortfolioSub(null); setIsResubmitting(false); }} className="px-3.5 py-2 bg-slate-100 rounded-xl text-xs font-bold text-slate-700 cursor-pointer">Close</button>
                       </div>
                     </div>
+
+                    {selectedPortfolioSub.prompt_text && (
+                      <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">📝 Original Stimulus Prompt</span>
+                          {selectedPortfolioSub.stimulus_theme && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-200">
+                              {selectedPortfolioSub.stimulus_theme}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs font-serif text-slate-800 leading-relaxed italic">
+                          "{selectedPortfolioSub.prompt_text}"
+                        </p>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="p-4 bg-orange-50 rounded-2xl border border-orange-200">
@@ -666,15 +801,19 @@ export default function StudentPaper1Portal() {
 
                       <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
                         <span className="block text-[11px] font-black text-emerald-800 uppercase tracking-wider mb-1">👨‍🏫 Teacher Assessment</span>
-                        {selectedPortfolioSub.criterion_a_score !== null ? (
-                          <div className="text-xs space-y-0.5 text-slate-700">
-                            <div>Crit A (Lang): <b>{selectedPortfolioSub.criterion_a_score}/12</b></div>
-                            <div>Crit B (Msg): <b>{selectedPortfolioSub.criterion_b_score}/12</b></div>
-                            <div>Crit C (Concept): <b>{selectedPortfolioSub.criterion_c_score}/6</b></div>
-                            <div className="pt-1 font-black text-emerald-900 border-t border-emerald-200 mt-1">Total: {(selectedPortfolioSub.criterion_a_score || 0) + (selectedPortfolioSub.criterion_b_score || 0) + (selectedPortfolioSub.criterion_c_score || 0)} / 30</div>
-                          </div>
+                        {selectedPortfolioSub.class_id ? (
+                          selectedPortfolioSub.criterion_a_score !== null ? (
+                            <div className="text-xs space-y-0.5 text-slate-700">
+                              <div>Crit A (Lang): <b>{selectedPortfolioSub.criterion_a_score}/12</b></div>
+                              <div>Crit B (Msg): <b>{selectedPortfolioSub.criterion_b_score}/12</b></div>
+                              <div>Crit C (Concept): <b>{selectedPortfolioSub.criterion_c_score}/6</b></div>
+                              <div className="pt-1 font-black text-emerald-900 border-t border-emerald-200 mt-1">Total: {(selectedPortfolioSub.criterion_a_score || 0) + (selectedPortfolioSub.criterion_b_score || 0) + (selectedPortfolioSub.criterion_c_score || 0)} / 30</div>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-amber-700 font-medium italic mt-2">Awaiting teacher evaluation and grading...</p>
+                          )
                         ) : (
-                          <p className="text-xs text-amber-700 font-medium italic mt-2">Awaiting teacher evaluation and grading...</p>
+                          <p className="text-xs text-slate-500 font-medium italic mt-2">Not applicable (No classroom enrolment - AI evaluation only).</p>
                         )}
                       </div>
                     </div>
@@ -686,7 +825,7 @@ export default function StudentPaper1Portal() {
                       </div>
                     )}
 
-                    {selectedPortfolioSub.teacher_feedback && (
+                    {selectedPortfolioSub.class_id && selectedPortfolioSub.teacher_feedback && (
                       <div className="p-5 bg-emerald-500 text-white rounded-2xl shadow-md space-y-1.5">
                         <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider">
                           <span>🔔 Teacher Feedback &amp; Guidance</span>

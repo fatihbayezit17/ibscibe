@@ -54,36 +54,35 @@ export default function AuthPage() {
         });
 
         if (authError) throw authError;
+        if (!authData.user) throw new Error('Authentication failed.');
 
-        // Eğer kullanıcı school-admin ise veya veritabanındaki rolüne göre yönlendirelim
-        if (role === 'school-admin') {
+        // 1. Önce okul koordinatörü mü kontrol edelim
+        const { data: schoolMem } = await supabase
+          .from('school_memberships')
+          .select('role')
+          .eq('user_id', authData.user.id)
+          .eq('role', 'coordinator')
+          .maybeSingle();
+
+        if (schoolMem) {
           window.location.href = '/school-admin';
           return;
         }
 
+        // 2. Kullanıcının veritabanındaki gerçek rolünü çekelim
         const { data: profile } = await supabase
           .from('profiles')
           .select('role')
           .eq('id', authData.user.id)
           .single();
 
-        // Okul koordinatörü olup olmadığını kontrol edelim
-        const { data: schoolMem } = await supabase
-          .from('school_memberships')
-          .select('role')
-          .eq('user_id', authData.user.id)
-          .eq('role', 'coordinator')
-          .single();
-
-        if (schoolMem || email.includes('admin') || profile?.role === 'teacher') {
-          if (schoolMem) {
-            window.location.href = '/school-admin';
-          } else if (profile?.role === 'teacher') {
-            window.location.href = '/teacher';
-          } else {
-            window.location.href = '/student';
-          }
+        // 3. Rol kesin olarak 'student' ise öğrenci paneline yönlendir
+        if (profile?.role === 'student') {
+          window.location.href = '/student';
+        } else if (profile?.role === 'teacher') {
+          window.location.href = '/teacher';
         } else {
+          // Varsayılan olarak öğrenci paneline atalım
           window.location.href = '/student';
         }
       }
