@@ -329,7 +329,7 @@ In conclusion, zero waste offers a comprehensive approach to reducing environmen
         pAns.a?.forEach((ans: string) => {
           if (p.questions.a.correct.includes(ans)) correctACount++;
         });
-        pScore += correctACouncer = correctACount;
+        pScore += correctACount;
         feedbackItem.checks.a = { student: pAns.a, correct: p.questions.a.correct, earned: correctACount };
 
         let correctBCount = 0;
