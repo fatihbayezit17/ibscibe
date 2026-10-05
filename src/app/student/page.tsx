@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
 interface StudentDashboardData {
@@ -230,7 +231,6 @@ export default function StudentDashboardPortal() {
             <div className="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-bold text-white shadow-sm">IB</div>
             <span className="font-bold text-slate-900">IBDP Student Portal</span>
             
-            {/* Okul ve Sınıf Rozetleri Üst Header'da */}
             {data.schoolName && (
               <span className="text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
                 🏫 {data.schoolName}
@@ -245,7 +245,6 @@ export default function StudentDashboardPortal() {
               </span>
             ))}
 
-            {/* Sınıf Yoksa Hızlı Kod Girme Alanı */}
             {data.enrolledClasses.length === 0 && (
               <form onSubmit={handleJoinClass} className="flex items-center gap-1.5">
                 <input 
@@ -273,54 +272,79 @@ export default function StudentDashboardPortal() {
         </div>
       </header>
 
-      {/* Feedback Modal */}
+      {/* Feedback / Exam Result Modal */}
       {showFeedbackModal && sub && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-4">
               <div>
-                <span className="px-3 py-1 bg-orange-100 text-orange-800 text-xs font-bold rounded-full border border-orange-200">{sub.chosen_text_type}</span>
-                <h3 className="text-lg font-black mt-1">Teacher Feedback &amp; Assessment</h3>
+                <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs font-bold rounded-full border border-indigo-200">
+                  {sub.chosen_text_type?.startsWith('Paper 2') ? 'Paper 2 Reading Exam' : sub.chosen_text_type}
+                </span>
+                <h3 className="text-lg font-black mt-1">
+                  {sub.chosen_text_type?.startsWith('Paper 2') ? 'Exam Result & Score Breakdown' : 'Teacher Feedback & Assessment'}
+                </h3>
               </div>
               <button onClick={() => setShowFeedbackModal(false)} className="px-3 py-1.5 bg-slate-100 rounded-xl text-xs font-bold cursor-pointer">Close ✕</button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 bg-orange-50 rounded-2xl border border-orange-200">
-                <span className="block text-[11px] font-black text-orange-800 uppercase tracking-wider mb-1">🤖 AI Assessment</span>
-                <div className="text-xs space-y-0.5 text-slate-700">
-                  <div>Crit A (Lang): <b>{sub.ai_score_a ?? '-'}/12</b></div>
-                  <div>Crit B (Msg): <b>{sub.ai_score_b ?? '-'}/12</b></div>
-                  <div>Crit C (Concept): <b>{sub.ai_score_c ?? '-'}/6</b></div>
-                  <div className="pt-1 font-black text-orange-900 border-t border-orange-200 mt-1">Total: {(sub.ai_score_a || 0) + (sub.ai_score_b || 0) + (sub.ai_score_c || 0)} / 30</div>
+            {sub.chosen_text_type?.startsWith('Paper 2') ? (
+              <div className="space-y-4">
+                <div className="p-6 bg-indigo-50 border border-indigo-200 rounded-2xl flex justify-between items-center">
+                  <div>
+                    <span className="text-xs font-bold text-indigo-900 block">Total Exam Score</span>
+                    <span className="text-3xl font-black text-indigo-700">{sub.ai_score_a} / {sub.ai_score_b}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-bold text-slate-600 block">Success Rate</span>
+                    <span className="text-3xl font-black text-slate-900">%{sub.ai_score_c}</span>
+                  </div>
+                </div>
+
+                <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 text-xs font-medium text-slate-700">
+                  <p>Your Paper 2 reading comprehension exam has been successfully completed and recorded in your Master Portfolio archive.</p>
                 </div>
               </div>
-
-              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
-                <span className="block text-[11px] font-black text-emerald-800 uppercase tracking-wider mb-1">👨‍🏫 Teacher Assessment</span>
-                {sub.criterion_a_score !== null ? (
-                  <div className="text-xs space-y-0.5 text-slate-700">
-                    <div>Crit A (Lang): <b>{sub.criterion_a_score}/12</b></div>
-                    <div>Crit B (Msg): <b>{sub.criterion_b_score}/12</b></div>
-                    <div>Crit C (Concept): <b>{sub.criterion_c_score}/6</b></div>
-                    <div className="pt-1 font-black text-emerald-900 border-t border-emerald-200 mt-1">Total: {(sub.criterion_a_score || 0) + (sub.criterion_b_score || 0) + (sub.criterion_c_score || 0)} / 30</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-4 bg-orange-50 rounded-2xl border border-orange-200">
+                    <span className="block text-[11px] font-black text-orange-800 uppercase tracking-wider mb-1">🤖 AI Assessment</span>
+                    <div className="text-xs space-y-0.5 text-slate-700">
+                      <div>Crit A (Lang): <b>{sub.ai_score_a ?? '-'}/12</b></div>
+                      <div>Crit B (Msg): <b>{sub.ai_score_b ?? '-'}/12</b></div>
+                      <div>Crit C (Concept): <b>{sub.ai_score_c ?? '-'}/6</b></div>
+                      <div className="pt-1 font-black text-orange-900 border-t border-orange-200 mt-1">Total: {(sub.ai_score_a || 0) + (sub.ai_score_b || 0) + (sub.ai_score_c || 0)} / 30</div>
+                    </div>
                   </div>
-                ) : (
-                  <p className="text-xs text-amber-700 font-medium italic mt-2">Awaiting teacher evaluation and grading...</p>
+
+                  <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
+                    <span className="block text-[11px] font-black text-emerald-800 uppercase tracking-wider mb-1">👨‍🏫 Teacher Assessment</span>
+                    {sub.criterion_a_score !== null ? (
+                      <div className="text-xs space-y-0.5 text-slate-700">
+                        <div>Crit A (Lang): <b>{sub.criterion_a_score}/12</b></div>
+                        <div>Crit B (Msg): <b>{sub.criterion_b_score}/12</b></div>
+                        <div>Crit C (Concept): <b>{sub.criterion_c_score}/6</b></div>
+                        <div className="pt-1 font-black text-emerald-900 border-t border-emerald-200 mt-1">Total: {(sub.criterion_a_score || 0) + (sub.criterion_b_score || 0) + (sub.criterion_c_score || 0)} / 30</div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-amber-700 font-medium italic mt-2">Awaiting teacher evaluation and grading...</p>
+                    )}
+                  </div>
+                </div>
+
+                {sub.teacher_feedback && (
+                  <div className="p-5 bg-emerald-500 text-white rounded-2xl shadow-md space-y-1.5">
+                    <div className="text-xs font-black uppercase tracking-wider">🔔 Teacher Feedback &amp; Guidance</div>
+                    <p className="text-xs whitespace-pre-line leading-relaxed font-medium">{sub.teacher_feedback}</p>
+                  </div>
                 )}
-              </div>
-            </div>
 
-            {sub.teacher_feedback && (
-              <div className="p-5 bg-emerald-500 text-white rounded-2xl shadow-md space-y-1.5">
-                <div className="text-xs font-black uppercase tracking-wider">🔔 Teacher Feedback &amp; Guidance</div>
-                <p className="text-xs whitespace-pre-line leading-relaxed font-medium">{sub.teacher_feedback}</p>
-              </div>
+                <div className="p-5 bg-slate-50 rounded-2xl whitespace-pre-line font-serif text-xs leading-relaxed max-h-48 overflow-y-auto border border-slate-200">
+                  {sub.content}
+                </div>
+              </>
             )}
-
-            <div className="p-5 bg-slate-50 rounded-2xl whitespace-pre-line font-serif text-xs leading-relaxed max-h-48 overflow-y-auto border border-slate-200">
-              {sub.content}
-            </div>
 
             <button onClick={() => setShowFeedbackModal(false)} className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl shadow-md cursor-pointer">Close Window</button>
           </div>
@@ -413,10 +437,21 @@ export default function StudentDashboardPortal() {
               <span className="text-[10px] font-mono uppercase text-orange-300 font-bold block">New Feedback</span>
               <span className="text-xl font-black text-orange-400 group-hover:scale-105 transition-transform inline-block">{data.unreadCount}</span>
             </div>
+
+            {/* My Portfolio Butonu */}
+            <Link 
+              href="/student/portfolio"
+              className="p-4 bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/30 backdrop-blur-md rounded-2xl text-center cursor-pointer transition-all shadow-md group min-w-[95px] flex flex-col justify-center items-center h-[76px]"
+            >
+              <span className="text-[10px] font-mono uppercase text-rose-300 font-bold block">My</span>
+              <span className="text-xs font-black text-rose-200 group-hover:text-white transition-colors">Portfolio</span>
+            </Link>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+        {/* Exam Grid: Paper 1, Paper 2, and EE */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+          {/* Paper 1 Card */}
           <div 
             onClick={() => router.push('/student/paper1')}
             className="p-8 bg-white border-2 border-slate-900 rounded-3xl shadow-lg cursor-pointer hover:border-orange-600 transition-all flex flex-col justify-between space-y-8 group relative overflow-hidden"
@@ -450,6 +485,41 @@ export default function StudentDashboardPortal() {
             </div>
           </div>
 
+          {/* Paper 2 Card */}
+          <div 
+            onClick={() => router.push('/student/paper2')}
+            className="p-8 bg-white border-2 border-indigo-900 rounded-3xl shadow-lg cursor-pointer hover:border-orange-600 transition-all flex flex-col justify-between space-y-8 group relative overflow-hidden"
+          >
+            <div className="flex justify-between items-start border-b-2 border-indigo-900 pb-6">
+              <div className="space-y-1 font-mono text-[11px] font-bold tracking-widest text-indigo-700">
+                <div>SPEC/2/ABENG/HP2/ENG/TZ0/XX</div>
+                <div className="text-[10px] text-slate-400">EXAMINATION PAPER • PORTAL ACCESS</div>
+              </div>
+              <div className="w-12 h-12 rounded-full bg-indigo-900 text-white flex items-center justify-center font-black tracking-tighter text-sm shadow-md">
+                ib
+              </div>
+            </div>
+
+            <div className="space-y-3 font-serif">
+              <div>
+                <h3 className="text-lg font-black text-slate-900">English B — Higher/Standard level — Paper 2</h3>
+                <h4 className="text-xs font-semibold text-slate-600">Compréhension écrite (Reading)</h4>
+                <h4 className="text-xs font-semibold text-slate-600">Comprensión de lectura</h4>
+              </div>
+
+              <div className="pt-2 text-xs font-sans text-slate-700 space-y-1 bg-slate-50 p-4 rounded-xl border">
+                <p className="font-bold text-slate-900">• Reading comprehension [40 marks / points]</p>
+                <p className="font-medium text-slate-500">• Time allowed: 1 hour</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+              <span className="text-xs font-bold text-orange-600 group-hover:translate-x-1 transition-transform">Launch Paper 2 Exam Environment ➔</span>
+              <span className="px-3 py-1 bg-indigo-900 text-white rounded-lg text-[10px] font-mono font-bold uppercase">Ready</span>
+            </div>
+          </div>
+
+          {/* Extended Essay Card */}
           {data.hasEEAccess ? (
             <div 
               onClick={() => router.push('/student/ee')}
