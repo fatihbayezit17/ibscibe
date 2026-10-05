@@ -9,9 +9,7 @@ export default function Paper2Portal() {
   const [studentId, setStudentId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Öğrenci cevap state'leri: { [passageId]: { a: string[], b: { [index]: string }, c: { [gapNum]: string }, d: string } }
   const [answers, setAnswers] = useState<Record<number, any>>({});
-  const [examResult, setExamResult] = useState<any>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -19,7 +17,6 @@ export default function Paper2Portal() {
     });
   }, []);
   
-  // Metinler ve Doğru Cevap Anahtarları (Answer Keys)
   const passages = [
     {
       id: 1,
@@ -37,7 +34,7 @@ In conclusion, minimalism offers a pathway to a more intentional and satisfying 
       questions: {
         a: {
           prompt: "Choose the four true statements.",
-          correct: ["B", "E", "G", "H"], // Örnek doğru anahtar (veya metne göre B, E, G, H vb.)
+          correct: ["B", "E", "G", "H"],
           options: [
             { id: "A", text: "Minimalism is solely about reducing physical possessions." },
             { id: "B", text: "The digital age has contributed to the rise of minimalism." },
@@ -319,7 +316,6 @@ In conclusion, zero waste offers a comprehensive approach to reducing environmen
 
     setSubmitting(true);
     try {
-      // Tüm pasajlar üzerinden puan hesaplama (Her pasaj 12 puan üzerinden: A=4, B=3, C=4, D=1)
       let totalScore = 0;
       let maxPossibleScore = passages.length * 12;
       const detailedFeedback: any = {};
@@ -329,15 +325,13 @@ In conclusion, zero waste offers a comprehensive approach to reducing environmen
         let pScore = 0;
         const feedbackItem: any = { title: p.title, checks: {} };
 
-        // Soru A (4 puan: her doğru eşleşme 1 puan)
         let correctACount = 0;
         pAns.a?.forEach((ans: string) => {
           if (p.questions.a.correct.includes(ans)) correctACount++;
         });
-        pScore += correctACount;
+        pScore += correctACouncer = correctACount;
         feedbackItem.checks.a = { student: pAns.a, correct: p.questions.a.correct, earned: correctACount };
 
-        // Soru B (3 puan)
         let correctBCount = 0;
         p.questions.b.correct.forEach((corrWord: string, idx: number) => {
           const studentWord = (pAns.b?.[idx] || '').trim().toLowerCase();
@@ -346,15 +340,14 @@ In conclusion, zero waste offers a comprehensive approach to reducing environmen
         pScore += correctBCount;
         feedbackItem.checks.b = { student: pAns.b, correct: p.questions.b.correct, earned: correctBCount };
 
-        // Soru C (4 puan)
         let correctCCount = 0;
-        Object.keys(p.questions.c.correct).forEach(gap => {
-          if (pAns.c?.[gap] === p.questions.c.correct[gap]) correctCCount++;
+        const correctMap: Record<string, string> = p.questions.c.correct;
+        Object.keys(correctMap).forEach(gap => {
+          if (pAns.c?.[gap] === correctMap[gap]) correctCCount++;
         });
         pScore += correctCCount;
-        feedbackItem.checks.c = { student: pAns.c, correct: p.questions.c.correct, earned: correctCCount };
+        feedbackItem.checks.c = { student: pAns.c, correct: correctMap, earned: correctCCount };
 
-        // Soru D (1 puan)
         let correctDCount = 0;
         if (pAns.d === p.questions.d.correct) correctDCount = 1;
         pScore += correctDCount;
@@ -366,7 +359,6 @@ In conclusion, zero waste offers a comprehensive approach to reducing environmen
 
       const percentage = Math.round((totalScore / maxPossibleScore) * 100);
 
-      // Supabase'e kaydetme (content alanına detaylı JSON feedback kaydediyoruz ki portfolyoda gösterilebilsin)
       const { error } = await supabase.from('submissions').insert([
         {
           student_id: studentId,
@@ -414,7 +406,6 @@ In conclusion, zero waste offers a comprehensive approach to reducing environmen
 
       <main className="max-w-6xl mx-auto px-6 py-8 flex-1 w-full space-y-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Sol Sütun: Okuma Metni */}
           <div className="lg:col-span-6 bg-white p-8 rounded-3xl border-2 border-slate-200 shadow-sm space-y-6">
             <div className="border-b pb-4 flex justify-between items-start">
               <div>
@@ -431,9 +422,7 @@ In conclusion, zero waste offers a comprehensive approach to reducing environmen
             </div>
           </div>
 
-          {/* Sağ Sütun: Sorular */}
           <div className="lg:col-span-6 space-y-6">
-            {/* Soru A */}
             <div className="bg-white p-6 rounded-3xl border-2 border-slate-200 shadow-sm space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-mono font-bold bg-slate-900 text-white px-2.5 py-1 rounded-lg">(a) True Statements</span>
@@ -456,7 +445,6 @@ In conclusion, zero waste offers a comprehensive approach to reducing environmen
               </div>
             </div>
 
-            {/* Soru B */}
             <div className="bg-white p-6 rounded-3xl border-2 border-slate-200 shadow-sm space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-mono font-bold bg-slate-900 text-white px-2.5 py-1 rounded-lg">(b) Sentence Completion</span>
@@ -480,7 +468,6 @@ In conclusion, zero waste offers a comprehensive approach to reducing environmen
               </div>
             </div>
 
-            {/* Soru C */}
             <div className="bg-white p-6 rounded-3xl border-2 border-slate-200 shadow-sm space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-mono font-bold bg-slate-900 text-white px-2.5 py-1 rounded-lg">(c) Headings Matching</span>
@@ -513,7 +500,6 @@ In conclusion, zero waste offers a comprehensive approach to reducing environmen
               </div>
             </div>
 
-            {/* Soru D */}
             <div className="bg-white p-6 rounded-3xl border-2 border-slate-200 shadow-sm space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-mono font-bold bg-slate-900 text-white px-2.5 py-1 rounded-lg">(d) Conclusion</span>
@@ -537,7 +523,6 @@ In conclusion, zero waste offers a comprehensive approach to reducing environmen
               </div>
             </div>
 
-            {/* Navigasyon ve Submit Butonları */}
             <div className="space-y-3 pt-2">
               <div className="flex items-center gap-3">
                 {currentIndex > 0 && (
