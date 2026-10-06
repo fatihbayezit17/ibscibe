@@ -17,6 +17,14 @@ interface StudentDashboardData {
   unreadTasksCount: number;
 }
 
+interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
 export default function StudentDashboardPortal() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -37,6 +45,10 @@ export default function StudentDashboardPortal() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showTasksModal, setShowTasksModal] = useState(false);
 
+  // Öğrenci Bildirimleri State'leri
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+
   useEffect(() => {
     initDashboard();
   }, []);
@@ -55,6 +67,13 @@ export default function StudentDashboardPortal() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'stimuli' },
         () => { initDashboard(); }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `teacher_id=eq.${data.profile.id}` },
+        (payload) => {
+          setNotifications(prev => [payload.new as NotificationItem, ...prev]);
+        }
       )
       .subscribe();
 
@@ -120,7 +139,6 @@ export default function StudentDashboardPortal() {
       .eq('student_id', user.id)
       .order('created_at', { ascending: false });
 
-    // Okunmamış bildirimleri doğru yakalayabilmek için false veya null kontrolü eklendi
     const unreadSubs = (subs || []).filter(s => s.teacher_feedback && (s.is_read_by_student === false || s.is_read_by_student === null));
     const latestWithFeedback = (subs || []).find(s => s.teacher_feedback) || null;
 
@@ -137,6 +155,9 @@ export default function StudentDashboardPortal() {
     const readTaskIds = JSON.parse(localStorage.getItem('read_task_ids_sevval') || '[]');
     const unreadTasks = tasksList.filter(t => !readTaskIds.includes(t.id));
 
+    // Bildirimleri yükle
+    await loadNotifications(user.id);
+
     setData({
       profile: profileData,
       schoolName: sName,
@@ -150,6 +171,38 @@ export default function StudentDashboardPortal() {
     });
 
     setLoading(false);
+  };
+
+  const loadNotifications = async (userId: string) => {
+    const { data } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('teacher_id', userId)
+      .order('created_at', { ascending: false });
+    if (data) setNotifications(data);
+  };
+
+  const markNotificationsAsRead = async () => {
+    setShowNotifications(!showNotifications);
+    if (!showNotifications && notifications.some(n => !n.is_read)) {
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('teacher_id', data.profile.id)
+        .eq('is_read', false);
+      
+      setNotifications(notifications.map(n => ({ ...n, is_read: true })));
+    }
+  };
+
+  const handleDeleteNotification = async (notifId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const { error } = await supabase.from('notifications').delete().eq('id', notifId);
+    if (error) {
+      alert('Bildirim silinemedi: ' + error.message);
+    } else {
+      setNotifications(notifications.filter(n => n.id !== notifId));
+    }
   };
 
   const handleJoinClass = async (e: React.FormEvent) => {
@@ -223,6 +276,7 @@ export default function StudentDashboardPortal() {
   if (loading) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-600">Loading Student Portal...</div>;
 
   const sub = data.latestSubmissionWithFeedback;
+  const unreadNotifCount = notifications.filter(n => !n.is_read).length;
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
@@ -263,6 +317,57 @@ export default function StudentDashboardPortal() {
 
           <div className="flex items-center space-x-3">
             <span className="text-xs font-semibold text-slate-600 hidden sm:inline">{data.profile?.full_name}</span>
+
+            {/* ÖĞRENCİ BİLDİRİM ZİLİ */}
+            <div className="relative">
+              <button 
+                onClick={markNotificationsAsRead}
+                className="relative p-2.5 rounded-xl border bg-slate-50 hover:bg-slate-100 text-slate-700 transition-all cursor-pointer flex items-center justify-center"
+                title="Notifications"
+              >
+                🔔
+                {unreadNotifCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-600 text-white text-[9px] font-black rounded-full flex items-center justify-center animate-pulse">
+                    {unreadNotifCount}
+                  </span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                  <div className="p-3 bg-slate-900 text-white font-bold text-xs flex justify-between items-center">
+                    <span>Notifications &amp; Exams</span>
+                    <span className="text-[10px] text-slate-300 font-mono">{notifications.length} total</span>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                    {notifications.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-slate-400">No notifications yet.</div>
+                    ) : (
+                      notifications.map(n => (
+                        <div key={n.id} className={`p-3.5 space-y-1 text-xs relative group ${n.is_read ? 'bg-white' : 'bg-orange-50/50'}`}>
+                          <div className="flex items-center justify-between font-bold text-slate-900 pr-6">
+                            <span>{n.title}</span>
+                            {!n.is_read && <span className="w-2 h-2 rounded-full bg-orange-600" />}
+                          </div>
+                          <p className="text-slate-600 text-[11px] leading-relaxed pr-6">{n.message}</p>
+                          <span className="text-[9px] text-slate-400 block font-mono">{new Date(n.created_at).toLocaleString()}</span>
+                          
+                          {/* Bildirim Silme Tuşu (Çöp Tenekesi) */}
+                          <button 
+                            onClick={(e) => handleDeleteNotification(n.id, e)} 
+                            title="Delete notification"
+                            className="absolute top-3 right-3 text-slate-400 hover:text-rose-600 p-1 rounded-lg transition-all cursor-pointer"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button 
               onClick={async () => { await supabase.auth.signOut(); window.location.href = '/auth'; }} 
               className="px-3 py-1.5 rounded-lg border text-xs bg-white text-rose-600 hover:bg-rose-50 font-bold shadow-xs cursor-pointer"
@@ -273,7 +378,7 @@ export default function StudentDashboardPortal() {
         </div>
       </header>
 
-      {/* Feedback / Exam Result Modal */}
+      {/* Feedback Modal */}
       {showFeedbackModal && sub && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -396,7 +501,6 @@ export default function StudentDashboardPortal() {
       )}
 
       <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
-        {/* Banner with Real Photo Background */}
         <div className="relative rounded-3xl overflow-hidden shadow-md border border-slate-200 text-white p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-slate-900">
           <div className="absolute inset-0 z-0">
             <img 
@@ -439,7 +543,6 @@ export default function StudentDashboardPortal() {
               <span className="text-xl font-black text-orange-400 group-hover:scale-105 transition-transform inline-block">{data.unreadCount}</span>
             </div>
 
-            {/* My Portfolio Butonu */}
             <Link 
               href="/student/portfolio"
               className="p-4 bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/30 backdrop-blur-md rounded-2xl text-center cursor-pointer transition-all shadow-md group min-w-[95px] flex flex-col justify-center items-center h-[76px]"
@@ -450,9 +553,7 @@ export default function StudentDashboardPortal() {
           </div>
         </div>
 
-        {/* Exam Grid: Paper 1, Paper 2, and EE */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
-          {/* Paper 1 Card */}
           <div 
             onClick={() => router.push('/student/paper1')}
             className="p-8 bg-white border-2 border-slate-900 rounded-3xl shadow-lg cursor-pointer hover:border-orange-600 transition-all flex flex-col justify-between space-y-8 group relative overflow-hidden"
@@ -486,7 +587,6 @@ export default function StudentDashboardPortal() {
             </div>
           </div>
 
-          {/* Paper 2 Card */}
           <div 
             onClick={() => router.push('/student/paper2')}
             className="p-8 bg-white border-2 border-indigo-900 rounded-3xl shadow-lg cursor-pointer hover:border-orange-600 transition-all flex flex-col justify-between space-y-8 group relative overflow-hidden"
@@ -520,7 +620,6 @@ export default function StudentDashboardPortal() {
             </div>
           </div>
 
-          {/* Extended Essay Card */}
           {data.hasEEAccess ? (
             <div 
               onClick={() => router.push('/student/ee')}

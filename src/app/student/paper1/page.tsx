@@ -488,7 +488,7 @@ export default function StudentPaper1Portal() {
   const all17TextList = ['Speech', 'Essay', 'Blog', 'Proposal', 'Review', 'Article', 'Letter to the editor', 'Diary', 'Brochure/leaflet/pamphlet', 'Official report', 'Set of instructions/guidelines', 'Opinion column/editorial', 'Personal correspondence (email/letter)', 'E-mail', 'Personal letter', 'Leaflet', 'Set of instructions'];
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col">
+    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
       <header className="border-b bg-white sticky top-0 z-40 shadow-sm print:hidden">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3 flex-wrap gap-y-2">
@@ -543,13 +543,18 @@ export default function StudentPaper1Portal() {
         </div>
       </header>
 
+      {/* Sınav Sonrası AI Examiner Değerlendirme Modalı */}
       {evaluationModalData && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-4">
-              <h3 className="text-lg font-black">IBDP Paper 1 Evaluation Results</h3>
+              <div>
+                <span className="text-[10px] font-mono uppercase bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-bold">IB Examiner Commentary Standard</span>
+                <h3 className="text-lg font-black text-slate-900 mt-1">Paper 1 AI Evaluation Results</h3>
+              </div>
               <button onClick={() => setEvaluationModalData(null)} className="px-3 py-1.5 bg-slate-100 rounded-xl text-xs font-bold cursor-pointer">Close ✕</button>
             </div>
+            
             <div className="grid grid-cols-3 gap-4">
               <div className="p-4 bg-orange-50 rounded-2xl text-center border border-orange-200">
                 <div className="text-[10px] uppercase font-bold text-orange-800">Crit A (Language)</div>
@@ -564,10 +569,16 @@ export default function StudentPaper1Portal() {
                 <div className="text-xl font-black text-orange-900 mt-1">{evaluationModalData.scoreC}/6</div>
               </div>
             </div>
-            <div className="p-5 bg-slate-50 rounded-2xl text-xs whitespace-pre-line leading-relaxed border border-slate-200">{evaluationModalData.feedback}</div>
-            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 font-semibold text-center">
-              ⏳ Teacher Feedback: <b>{enrolledClasses.length > 0 ? 'Awaiting teacher evaluation and grading...' : 'Not applicable (No classroom enrolment - AI evaluation only).'}</b>
+
+            <div className="p-5 bg-slate-50 rounded-2xl text-xs space-y-2 border border-slate-200">
+              <div className="font-bold text-slate-900 uppercase tracking-wider text-[11px]">📋 IB Examiner Commentary &amp; Feedback Report:</div>
+              <p className="whitespace-pre-line text-slate-700 leading-relaxed font-sans">{evaluationModalData.feedback}</p>
             </div>
+
+            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 font-semibold text-center">
+              ⏳ Teacher Feedback: <b>{enrolledClasses.length > 0 ? 'Awaiting formal teacher evaluation and grading...' : 'Not applicable (No classroom enrolment - AI evaluation only).'}</b>
+            </div>
+
             <button onClick={() => { setEvaluationModalData(null); setActiveTab('portfolio'); }} className="w-full py-3 bg-orange-600 text-white font-bold rounded-xl shadow-md cursor-pointer">Go to Portfolio ➔</button>
           </div>
         </div>
@@ -589,8 +600,8 @@ export default function StudentPaper1Portal() {
               <span className="text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 bg-orange-600/80 text-white rounded-lg font-bold border border-orange-500/30 backdrop-blur-sm">
                 Student Archive
               </span>
-              <h1 className="text-2xl md:text-3xl font-black text-white">My Writing Submissions &amp; Feedback Portfolio</h1>
-              <p className="text-xs text-slate-300 max-w-xl">Review your essay history, check AI and teacher assessments, and submit revisions for your IBDP English B coursework.</p>
+              <h1 className="text-2xl md:text-3xl font-black text-white">My Writing Submissions &amp; IB Feedback Portfolio</h1>
+              <p className="text-xs text-slate-300 max-w-xl">Review your essay history, check AI examiner commentary reports and teacher assessments, and submit revisions for your coursework.</p>
             </div>
 
             <div className="flex items-center gap-3 relative z-10 shrink-0">
@@ -747,7 +758,7 @@ export default function StudentPaper1Portal() {
                             <span className="text-[11px] font-medium text-amber-600 block mt-1">⏳ Awaiting Teacher Feedback</span>
                           )
                         ) : (
-                          <span className="text-[11px] font-medium text-slate-400 block mt-1">🤖 AI Only (No Classroom)</span>
+                          <span className="text-[11px] font-medium text-slate-400 block mt-1">🤖 AI Examiner Aligned</span>
                         )}
                       </div>
                     );
@@ -757,7 +768,10 @@ export default function StudentPaper1Portal() {
                 {selectedPortfolioSub && (
                   <div className="lg:col-span-8 bg-white border border-slate-200 p-8 rounded-3xl space-y-6 shadow-xl print:shadow-none print:w-full">
                     <div className="flex justify-between items-center border-b border-slate-100 pb-4 print:hidden">
-                      <h3 className="font-bold text-sm text-slate-900">{selectedPortfolioSub.chosen_text_type}</h3>
+                      <div>
+                        <span className="text-[10px] font-mono uppercase bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-bold">IB Examiner Commentary Standard</span>
+                        <h3 className="font-bold text-sm text-slate-900 mt-1">{selectedPortfolioSub.chosen_text_type}</h3>
+                      </div>
                       <div className="flex gap-2">
                         {selectedPortfolioSub.class_id && !isResubmitting && (
                           <button onClick={() => { setIsResubmitting(true); setResubmitContent(selectedPortfolioSub.content); }} className="px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold cursor-pointer">
@@ -790,45 +804,45 @@ export default function StudentPaper1Portal() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="p-4 bg-orange-50 rounded-2xl border border-orange-200">
-                        <span className="block text-[11px] font-black text-orange-800 uppercase tracking-wider mb-1">🤖 AI Assessment</span>
+                        <span className="block text-[11px] font-black text-orange-800 uppercase tracking-wider mb-1">🤖 AI Examiner Assessment</span>
                         <div className="text-xs space-y-0.5 text-slate-700">
-                          <div>Crit A (Lang): <b>{selectedPortfolioSub.ai_score_a ?? '-'}/12</b></div>
-                          <div>Crit B (Msg): <b>{selectedPortfolioSub.ai_score_b ?? '-'}/12</b></div>
-                          <div>Crit C (Concept): <b>{selectedPortfolioSub.ai_score_c ?? '-'}/6</b></div>
-                          <div className="pt-1 font-black text-orange-900 border-t border-orange-200 mt-1">Total: {(selectedPortfolioSub.ai_score_a || 0) + (selectedPortfolioSub.ai_score_b || 0) + (selectedPortfolioSub.ai_score_c || 0)} / 30</div>
+                          <div>Crit A (Language Command): <b>{selectedPortfolioSub.ai_score_a ?? '-'}/12</b></div>
+                          <div>Crit B (Message &amp; Scope): <b>{selectedPortfolioSub.ai_score_b ?? '-'}/12</b></div>
+                          <div>Crit C (Conceptual Understanding): <b>{selectedPortfolioSub.ai_score_c ?? '-'}/6</b></div>
+                          <div className="pt-1 font-black text-orange-900 border-t border-orange-200 mt-1">Total Markband: {(selectedPortfolioSub.ai_score_a || 0) + (selectedPortfolioSub.ai_score_b || 0) + (selectedPortfolioSub.ai_score_c || 0)} / 30</div>
                         </div>
                       </div>
 
                       <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
-                        <span className="block text-[11px] font-black text-emerald-800 uppercase tracking-wider mb-1">👨‍🏫 Teacher Assessment</span>
+                        <span className="block text-[11px] font-black text-emerald-800 uppercase tracking-wider mb-1">👨‍🏫 Teacher Formal Assessment</span>
                         {selectedPortfolioSub.class_id ? (
                           selectedPortfolioSub.criterion_a_score !== null ? (
                             <div className="text-xs space-y-0.5 text-slate-700">
-                              <div>Crit A (Lang): <b>{selectedPortfolioSub.criterion_a_score}/12</b></div>
-                              <div>Crit B (Msg): <b>{selectedPortfolioSub.criterion_b_score}/12</b></div>
-                              <div>Crit C (Concept): <b>{selectedPortfolioSub.criterion_c_score}/6</b></div>
-                              <div className="pt-1 font-black text-emerald-900 border-t border-emerald-200 mt-1">Total: {(selectedPortfolioSub.criterion_a_score || 0) + (selectedPortfolioSub.criterion_b_score || 0) + (selectedPortfolioSub.criterion_c_score || 0)} / 30</div>
+                              <div>Crit A: <b>{selectedPortfolioSub.criterion_a_score}/12</b></div>
+                              <div>Crit B: <b>{selectedPortfolioSub.criterion_b_score}/12</b></div>
+                              <div>Crit C: <b>{selectedPortfolioSub.criterion_c_score}/6</b></div>
+                              <div className="pt-1 font-black text-emerald-900 border-t border-emerald-200 mt-1">Total Markband: {(selectedPortfolioSub.criterion_a_score || 0) + (selectedPortfolioSub.criterion_b_score || 0) + (selectedPortfolioSub.criterion_c_score || 0)} / 30</div>
                             </div>
                           ) : (
                             <p className="text-xs text-amber-700 font-medium italic mt-2">Awaiting teacher evaluation and grading...</p>
                           )
                         ) : (
-                          <p className="text-xs text-slate-500 font-medium italic mt-2">Not applicable (No classroom enrolment - AI evaluation only).</p>
+                          <p className="text-xs text-slate-500 font-medium italic mt-2">AI Standalone Mode</p>
                         )}
                       </div>
                     </div>
 
                     {selectedPortfolioSub.ai_feedback && (
-                      <div className="p-4 bg-orange-50/60 border border-orange-200 rounded-2xl text-xs space-y-1">
-                        <b>🤖 AI Analytical Feedback:</b>
-                        <p className="whitespace-pre-line text-slate-700 leading-relaxed">{selectedPortfolioSub.ai_feedback}</p>
+                      <div className="p-5 bg-orange-50/60 border border-orange-200 rounded-2xl text-xs space-y-2">
+                        <div className="font-bold text-orange-900 uppercase tracking-wider text-[11px]">📋 Examiner Commentary &amp; Feedback Report:</div>
+                        <p className="whitespace-pre-line text-slate-700 leading-relaxed font-sans">{selectedPortfolioSub.ai_feedback}</p>
                       </div>
                     )}
 
                     {selectedPortfolioSub.class_id && selectedPortfolioSub.teacher_feedback && (
                       <div className="p-5 bg-emerald-500 text-white rounded-2xl shadow-md space-y-1.5">
                         <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider">
-                          <span>🔔 Teacher Feedback &amp; Guidance</span>
+                          <span>🔔 Teacher Guidance &amp; Comments</span>
                         </div>
                         <p className="text-xs whitespace-pre-line leading-relaxed font-medium">
                           {selectedPortfolioSub.teacher_feedback}

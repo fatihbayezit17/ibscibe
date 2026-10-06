@@ -17,13 +17,13 @@ export default function StudentMasterPortfolioPage() {
   
   const [viewMode, setViewMode] = useState<'selector' | 'subject-detail'>('selector');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'paper1' | 'paper2'>('paper1');
+  const [activeTab, setActiveTab] = useState<'paper1' | 'paper2' | 'report-card'>('paper1');
 
   const [paper1Submissions, setPaper1Submissions] = useState<any[]>([]);
   const [paper2Submissions, setPaper2Submissions] = useState<any[]>([]);
 
   const [selectedP1Sub, setSelectedP1Sub] = useState<any>(null);
-  const [selectedP2Sub, setSelectedP2Sub] = useState<any>(null); // Paper 2 Detay Modalı için
+  const [selectedP2Sub, setSelectedP2Sub] = useState<any>(null);
   const [isResubmitting, setIsResubmitting] = useState(false);
   const [resubmitContent, setResubmitContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -113,6 +113,10 @@ export default function StudentMasterPortfolioPage() {
     }
   };
 
+  const handleExportPDF = () => {
+    window.print();
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-600 font-medium">
@@ -123,9 +127,15 @@ export default function StudentMasterPortfolioPage() {
 
   const unreadP1Count = paper1Submissions.filter(s => s.teacher_feedback && s.is_read_by_student === false).length;
 
+  // Karne istatistikleri
+  const gradedSubs = paper1Submissions.filter(s => s.criterion_a_score !== null);
+  const avgCritA = gradedSubs.length > 0 ? (gradedSubs.reduce((acc, s) => acc + (s.criterion_a_score || 0), 0) / gradedSubs.length).toFixed(1) : '-';
+  const avgCritB = gradedSubs.length > 0 ? (gradedSubs.reduce((acc, s) => acc + (s.criterion_b_score || 0), 0) / gradedSubs.length).toFixed(1) : '-';
+  const avgCritC = gradedSubs.length > 0 ? (gradedSubs.reduce((acc, s) => acc + (s.criterion_c_score || 0), 0) / gradedSubs.length).toFixed(1) : '-';
+
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col">
-      <header className="border-b bg-white sticky top-0 z-40 shadow-sm">
+    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
+      <header className="border-b bg-white sticky top-0 z-40 shadow-sm print:hidden">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <button
@@ -145,6 +155,14 @@ export default function StudentMasterPortfolioPage() {
           </div>
 
           <div className="flex items-center space-x-3">
+            {viewMode === 'subject-detail' && (
+              <button 
+                onClick={handleExportPDF}
+                className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer"
+              >
+                📥 Download PDF Report
+              </button>
+            )}
             <span className="text-xs text-indigo-600 font-semibold bg-indigo-50 px-3 py-1 rounded-xl border border-indigo-200">
               Nilüfer Anadolu İmam Hatip Lisesi
             </span>
@@ -162,7 +180,7 @@ export default function StudentMasterPortfolioPage() {
               </span>
               <h1 className="text-3xl font-black text-slate-900">Select a Subject Portfolio</h1>
               <p className="text-sm text-slate-600 max-w-xl">
-                Choose a subject card below to inspect your historical submissions, teacher feedback, analytical grades, and component results.
+                Choose a subject card below to inspect your historical submissions, teacher feedback, analytical grades, and official academic report cards.
               </p>
             </div>
 
@@ -200,7 +218,7 @@ export default function StudentMasterPortfolioPage() {
                       English B
                     </h2>
                     <p className="text-xs text-slate-300 line-clamp-2">
-                      Paper 1 Writing essays, teacher grading, highlights, and Paper 2 reading comprehension results.
+                      Paper 1 Writing essays, teacher grading, highlights, Paper 2 reading results, and academic report card.
                     </p>
                     <div className="pt-2 flex items-center gap-3 text-xs font-semibold text-orange-400">
                       <span>View Portfolio Details →</span>
@@ -218,7 +236,7 @@ export default function StudentMasterPortfolioPage() {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="relative rounded-3xl overflow-hidden shadow-md border border-slate-200 text-white p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-slate-900">
+            <div className="relative rounded-3xl overflow-hidden shadow-md border border-slate-200 text-white p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-slate-900 print:hidden">
               <div className="absolute inset-0 z-0 opacity-25">
                 <img 
                   src="https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?auto=format&fit=crop&w=2000&q=80" 
@@ -232,7 +250,7 @@ export default function StudentMasterPortfolioPage() {
                 </span>
                 <h1 className="text-2xl md:text-3xl font-black text-white">English B Learning Archive</h1>
                 <p className="text-xs text-slate-300 max-w-xl">
-                  Review your Paper 1 writing submissions &amp; teacher feedback alongside your Paper 2 reading comprehension records.
+                  Review your Paper 1 writing submissions, teacher feedback, Paper 2 reading results, and academic report card.
                 </p>
               </div>
 
@@ -248,7 +266,7 @@ export default function StudentMasterPortfolioPage() {
               </div>
             </div>
 
-            <div className="flex gap-3 border-b border-slate-200 pb-4">
+            <div className="flex gap-3 border-b border-slate-200 pb-4 print:hidden">
               <button
                 onClick={() => setActiveTab('paper1')}
                 className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer relative ${
@@ -273,6 +291,16 @@ export default function StudentMasterPortfolioPage() {
                 }`}
               >
                 Paper 2 Reading Results ({paper2Submissions.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('report-card')}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
+                  activeTab === 'report-card' 
+                    ? 'bg-indigo-600 text-white shadow-sm' 
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                📊 Report Card &amp; Progress
               </button>
             </div>
 
@@ -426,7 +454,7 @@ export default function StudentMasterPortfolioPage() {
                   </div>
                 )}
               </div>
-            ) : (
+            ) : activeTab === 'paper2' ? (
               <div className="space-y-6">
                 {paper2Submissions.length === 0 ? (
                   <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 shadow-sm text-slate-500 text-xs">
@@ -492,7 +520,6 @@ export default function StudentMasterPortfolioPage() {
                           </div>
                         </div>
 
-                        {/* Detaylı Soru Doğru/Yanlış Analizi */}
                         <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
                           <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Detailed Question Breakdown</h4>
                           {(() => {
@@ -504,14 +531,12 @@ export default function StudentMasterPortfolioPage() {
                                   <div key={passageId} className="p-4 bg-slate-50 border rounded-2xl space-y-3">
                                     <h5 className="font-bold text-xs text-indigo-900">Passage: {pData.title}</h5>
                                     
-                                    {/* Soru A */}
                                     <div className="text-xs space-y-1 bg-white p-3 rounded-xl border">
                                       <div className="font-bold text-slate-700">(a) True Statements (Earned: {pData.checks.a.earned}/4)</div>
                                       <div className="text-slate-600">Your selections: <b>{pData.checks.a.student?.join(', ') || 'None'}</b></div>
                                       <div className="text-emerald-700">Correct answers: <b>{pData.checks.a.correct.join(', ')}</b></div>
                                     </div>
 
-                                    {/* Soru B */}
                                     <div className="text-xs space-y-1 bg-white p-3 rounded-xl border">
                                       <div className="font-bold text-slate-700">(b) Sentence Completion (Earned: {pData.checks.b.earned}/3)</div>
                                       {Object.keys(pData.checks.b.correct).map((bIdx: any) => {
@@ -526,7 +551,6 @@ export default function StudentMasterPortfolioPage() {
                                       })}
                                     </div>
 
-                                    {/* Soru C */}
                                     <div className="text-xs space-y-1 bg-white p-3 rounded-xl border">
                                       <div className="font-bold text-slate-700">(c) Headings Matching (Earned: {pData.checks.c.earned}/4)</div>
                                       {Object.keys(pData.checks.c.correct).map((gap: any) => {
@@ -541,7 +565,6 @@ export default function StudentMasterPortfolioPage() {
                                       })}
                                     </div>
 
-                                    {/* Soru D */}
                                     <div className="text-xs space-y-1 bg-white p-3 rounded-xl border">
                                       <div className="font-bold text-slate-700">(d) Conclusion (Earned: {pData.checks.d.earned}/1)</div>
                                       <div className={`${pData.checks.d.student === pData.checks.d.correct ? 'text-emerald-700' : 'text-rose-600'}`}>
@@ -560,6 +583,79 @@ export default function StudentMasterPortfolioPage() {
                     )}
                   </div>
                 )}
+              </div>
+            ) : (
+              /* --- YENİ EKLENEN KARNE VE GELİŞİM GRAFİKLERİ SEKMESİ --- */
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="p-6 bg-white border rounded-3xl shadow-sm space-y-3">
+                    <span className="text-xs font-bold text-yellow-800 bg-yellow-50 px-2.5 py-1 rounded-lg border border-yellow-200 uppercase">Criterion A (Language)</span>
+                    <div className="text-3xl font-black text-slate-900">{avgCritA} <span className="text-sm font-normal text-slate-400">/ 12 avg</span></div>
+                    <p className="text-[11px] text-slate-500">Measures command of language, vocabulary range, and grammatical accuracy.</p>
+                  </div>
+
+                  <div className="p-6 bg-white border rounded-3xl shadow-sm space-y-3">
+                    <span className="text-xs font-bold text-sky-800 bg-sky-50 px-2.5 py-1 rounded-lg border border-sky-200 uppercase">Criterion B (Message)</span>
+                    <div className="text-3xl font-black text-slate-900">{avgCritB} <span className="text-sm font-normal text-slate-400">/ 12 avg</span></div>
+                    <p className="text-[11px] text-slate-500">Measures organization, register, format, and communication of message.</p>
+                  </div>
+
+                  <div className="p-6 bg-white border rounded-3xl shadow-sm space-y-3">
+                    <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 uppercase">Criterion C (Conceptual)</span>
+                    <div className="text-3xl font-black text-slate-900">{avgCritC} <span className="text-sm font-normal text-slate-400">/ 6 avg</span></div>
+                    <p className="text-[11px] text-slate-500">Measures conceptual understanding and contextual engagement.</p>
+                  </div>
+                </div>
+
+                <div className="p-6 bg-white border rounded-3xl shadow-sm space-y-4">
+                  <h3 className="font-extrabold text-sm text-slate-900 uppercase tracking-wider">Official Academic Report Card &amp; Assessment History</h3>
+                  
+                  {paper1Submissions.length === 0 ? (
+                    <p className="text-xs text-slate-400 py-12 text-center">No assessments recorded in your portfolio yet.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b bg-slate-900 text-white text-[11px] font-bold uppercase tracking-wider">
+                            <th className="p-3">Date</th>
+                            <th className="p-3">Task / Text Type</th>
+                            <th className="p-3">Word Count</th>
+                            <th className="p-3">Crit. A (/12)</th>
+                            <th className="p-3">Crit. B (/12)</th>
+                            <th className="p-3">Crit. C (/6)</th>
+                            <th className="p-3">Total Score (/30)</th>
+                            <th className="p-3">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y text-xs">
+                          {paper1Submissions.map((sub) => {
+                            const isGraded = sub.criterion_a_score !== null;
+                            const total = isGraded ? (sub.criterion_a_score || 0) + (sub.criterion_b_score || 0) + (sub.criterion_c_score || 0) : '-';
+
+                            return (
+                              <tr key={sub.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-3 font-mono text-slate-600">{new Date(sub.created_at).toLocaleDateString()}</td>
+                                <td className="p-3 font-bold text-slate-900">{sub.chosen_text_type}</td>
+                                <td className="p-3 font-mono">{sub.word_count || 0}w</td>
+                                <td className="p-3 font-bold text-yellow-700">{sub.criterion_a_score ?? '-'}</td>
+                                <td className="p-3 font-bold text-sky-700">{sub.criterion_b_score ?? '-'}</td>
+                                <td className="p-3 font-bold text-emerald-700">{sub.criterion_c_score ?? '-'}</td>
+                                <td className="p-3 font-black text-slate-900">{total}</td>
+                                <td className="p-3">
+                                  {isGraded ? (
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold uppercase">Evaluated</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-bold uppercase">Pending Grade</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

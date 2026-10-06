@@ -4,11 +4,8 @@ import React, { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export default function AuthPage() {
-  const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<'student' | 'teacher' | 'school-admin'>('student');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -18,73 +15,41 @@ export default function AuthPage() {
     setErrorMsg('');
 
     try {
-      if (isSignUp) {
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { full_name: fullName, role: role }
-          }
-        });
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-        if (authError) throw authError;
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('Authentication failed.');
 
-        if (authData.user) {
-          const { error: profileError } = await supabase.from('profiles').insert([
-            {
-              id: authData.user.id,
-              full_name: fullName,
-              role: role === 'school-admin' ? 'teacher' : role,
-            }
-          ]);
-          if (profileError) console.error('Profile creation error:', profileError);
-        }
+      // 1. Önce okul koordinatörü mü kontrol edelim
+      const { data: schoolMem } = await supabase
+        .from('school_memberships')
+        .select('role')
+        .eq('user_id', authData.user.id)
+        .eq('role', 'coordinator')
+        .maybeSingle();
 
-        if (role === 'teacher') {
-          window.location.href = '/teacher';
-        } else if (role === 'school-admin') {
-          window.location.href = '/school-admin';
-        } else {
-          window.location.href = '/student';
-        }
+      if (schoolMem) {
+        window.location.href = '/school-admin';
+        return;
+      }
+
+      // 2. Kullanıcının veritabanındaki gerçek rolünü çekelim
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', authData.user.id)
+        .single();
+
+      // 3. Role göre yönlendirme yapalım
+      if (profile?.role === 'student') {
+        window.location.href = '/student';
+      } else if (profile?.role === 'teacher') {
+        window.location.href = '/teacher';
       } else {
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (authError) throw authError;
-        if (!authData.user) throw new Error('Authentication failed.');
-
-        // 1. Önce okul koordinatörü mü kontrol edelim
-        const { data: schoolMem } = await supabase
-          .from('school_memberships')
-          .select('role')
-          .eq('user_id', authData.user.id)
-          .eq('role', 'coordinator')
-          .maybeSingle();
-
-        if (schoolMem) {
-          window.location.href = '/school-admin';
-          return;
-        }
-
-        // 2. Kullanıcının veritabanındaki gerçek rolünü çekelim
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', authData.user.id)
-          .single();
-
-        // 3. Rol kesin olarak 'student' ise öğrenci paneline yönlendir
-        if (profile?.role === 'student') {
-          window.location.href = '/student';
-        } else if (profile?.role === 'teacher') {
-          window.location.href = '/teacher';
-        } else {
-          // Varsayılan olarak öğrenci paneline atalım
-          window.location.href = '/student';
-        }
+        window.location.href = '/student';
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'An error occurred during authentication.');
@@ -100,12 +65,10 @@ export default function AuthPage() {
             IB English B Assessment Portal
           </span>
           <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">
-            {isSignUp ? 'Create an Account' : 'Welcome Back'}
+            Welcome Back
           </h2>
           <p className="text-sm text-slate-500 mt-2">
-            {isSignUp
-              ? 'Join to practice or manage Paper 1 writing tasks'
-              : 'Sign in to access your dashboard, portfolios, or school license'}
+            Sign in to access your dashboard, portfolios, or school license
           </p>
         </div>
 
@@ -116,22 +79,6 @@ export default function AuthPage() {
         )}
 
         <form onSubmit={handleAuth} className="space-y-5">
-          {isSignUp && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                Full Name
-              </label>
-              <input
-                type="text"
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="e.g. Alex Johnson"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
-              />
-            </div>
-          )}
-
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
               Email Address
@@ -160,70 +107,14 @@ export default function AuthPage() {
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-              Select Portal / Role
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setRole('student')}
-                className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition-all text-center ${
-                  role === 'student'
-                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-md'
-                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
-                }`}
-              >
-                Student
-              </button>
-              <button
-                type="button"
-                onClick={() => setRole('teacher')}
-                className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition-all text-center ${
-                  role === 'teacher'
-                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-md'
-                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
-                }`}
-              >
-                Teacher
-              </button>
-              <button
-                type="button"
-                onClick={() => setRole('school-admin')}
-                className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition-all text-center ${
-                  role === 'school-admin'
-                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-md'
-                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
-                }`}
-              >
-                School Admin
-              </button>
-            </div>
-          </div>
-
           <button
             type="submit"
             disabled={loading}
             className="w-full mt-2 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 text-sm"
           >
-            {loading ? 'Processing...' : isSignUp ? 'Create Account' : 'Sign In'}
+            {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-
-        <div className="mt-8 text-center border-t border-slate-100 pt-6">
-          <p className="text-sm text-slate-500">
-            {isSignUp ? 'Already have an account?' : "Don't have an account yet?"}{' '}
-            <button
-              onClick={() => {
-                setIsSignUp(!isSignUp);
-                setErrorMsg('');
-              }}
-              className="text-indigo-600 hover:text-indigo-700 font-semibold underline underline-offset-4 ml-1"
-            >
-              {isSignUp ? 'Sign In' : 'Sign Up'}
-            </button>
-          </p>
-        </div>
       </div>
     </div>
   );
