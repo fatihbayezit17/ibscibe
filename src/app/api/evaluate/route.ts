@@ -7,7 +7,11 @@ const ai = new GoogleGenAI({
 
 export async function POST(req: NextRequest) {
   try {
-    const { studentText, chosenTextType, promptText } = await req.json();
+    const body = await req.json();
+    // Ön yüzden gelen değişken isimlerini güvenli bir şekilde karşılıyoruz
+    const studentText = body.essay || body.studentText;
+    const chosenTextType = body.textType || body.chosenTextType;
+    const promptText = body.stimulus || body.promptText;
 
     if (!studentText || studentText.trim().length < 5) {
       return NextResponse.json({
