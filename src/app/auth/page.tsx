@@ -23,34 +23,45 @@ export default function AuthPage() {
       if (authError) throw authError;
       if (!authData.user) throw new Error('Authentication failed.');
 
-      // 1. Önce okul koordinatörü mü kontrol edelim
-      const { data: schoolMem } = await supabase
+      const userId = authData.user.id;
+
+      // 1. Önce okul koordinatörlüğü (school_memberships tablosundaki role) kontrol edelim
+      const { data: memData } = await supabase
         .from('school_memberships')
         .select('role')
-        .eq('user_id', authData.user.id)
-        .eq('role', 'coordinator')
+        .eq('user_id', userId)
         .maybeSingle();
 
-      if (schoolMem) {
+      if (memData?.role === 'coordinator') {
         window.location.href = '/school-admin';
         return;
       }
 
-      // 2. Kullanıcının veritabanındaki gerçek rolünü çekelim
+      // 2. Eğer okul üyeliğinde öğretmen (teacher) olarak kayıtlıysa direkt öğretmen paneline yönlendir
+      if (memData?.role === 'teacher') {
+        window.location.href = '/teacher';
+        return;
+      }
+
+      // 3. Kullanıcının profildeki rolüne bakalım
       const { data: profile } = await supabase
         .from('profiles')
         .select('role')
-        .eq('id', authData.user.id)
-        .single();
+        .eq('id', userId)
+        .maybeSingle();
 
-      // 3. Role göre yönlendirme yapalım
-      if (profile?.role === 'student') {
-        window.location.href = '/student';
-      } else if (profile?.role === 'teacher') {
+      const userRole = profile?.role || memData?.role;
+
+      // 4. Kesin Rol Yönlendirmesi
+      if (userRole === 'teacher') {
         window.location.href = '/teacher';
+      } else if (userRole === 'coordinator') {
+        window.location.href = '/school-admin';
       } else {
+        // Varsayılan olarak öğrenci
         window.location.href = '/student';
       }
+
     } catch (err: any) {
       setErrorMsg(err.message || 'An error occurred during authentication.');
       setLoading(false);
@@ -110,7 +121,7 @@ export default function AuthPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 text-sm"
+            className="w-full mt-2 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 text-sm cursor-pointer"
           >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>

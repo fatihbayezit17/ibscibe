@@ -41,7 +41,9 @@ export default function SchoolAdminPortal() {
   const [schoolLicense, setSchoolLicense] = useState<SchoolLicense | null>(null);
   const [members, setMembers] = useState<SchoolMember[]>([]);
   
+  // Yeni Üye Ekleme Form State'leri
   const [newMemberEmail, setNewMemberEmail] = useState('');
+  const [newMemberFullName, setNewMemberFullName] = useState('');
   const [newMemberRole, setNewMemberRole] = useState<'teacher' | 'student'>('teacher');
   const [newMemberClass, setNewMemberClass] = useState('IBDP-1A');
   const [msg, setMsg] = useState('');
@@ -108,7 +110,7 @@ export default function SchoolAdminPortal() {
           const { data: prof } = await supabase.from('profiles').select('full_name, email, class_name').eq('id', m.user_id).maybeSingle();
           return {
             ...m,
-            profiles: prof || { full_name: m.user_id.slice(0, 8), email: 'No Email', class_name: 'IBDP-1A' }
+            profiles: prof || { full_name: 'Unnamed User', email: m.user_id.slice(0, 8), class_name: 'IBDP-1A' }
           };
         }));
         setMembers(enhanced);
@@ -120,7 +122,10 @@ export default function SchoolAdminPortal() {
     e.preventDefault();
     setMsg('');
     setTempPasswordGenerated('');
-    if (!newMemberEmail.trim() || !schoolLicense) return;
+    if (!newMemberEmail.trim() || !newMemberFullName.trim() || !schoolLicense) {
+      setMsg('Please fill in both Full Name and Email Address.');
+      return;
+    }
 
     const teacherCount = members.filter(m => m.role === 'teacher').length;
     const studentCount = members.filter(m => m.role === 'student').length;
@@ -146,7 +151,7 @@ export default function SchoolAdminPortal() {
         body: JSON.stringify({
           email: newMemberEmail.trim().toLowerCase(),
           password: generatedPassword,
-          fullName: `${newMemberRole === 'teacher' ? 'Teacher' : 'Student'} (${newMemberEmail.split('@')[0]})`,
+          fullName: newMemberFullName.trim(),
           role: newMemberRole
         })
       });
@@ -154,11 +159,15 @@ export default function SchoolAdminPortal() {
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || 'Failed to create user account.');
 
-      await supabase.from('profiles').update({
-        full_name: newMemberEmail.split('@')[0],
+      // Profili Ad, Soyad, E-posta ve Sınıf bilgisi ile güncelleyelim
+      const { error: profErr } = await supabase.from('profiles').upsert({
+        id: resData.userId,
+        full_name: newMemberFullName.trim(),
         email: newMemberEmail.trim().toLowerCase(),
         class_name: newMemberRole === 'student' ? newMemberClass : 'Faculty'
-      }).eq('id', resData.userId);
+      });
+
+      if (profErr) throw profErr;
 
       const { error: insErr } = await supabase.from('school_memberships').insert([{
         school_id: schoolLicense.id,
@@ -168,9 +177,10 @@ export default function SchoolAdminPortal() {
 
       if (insErr) throw insErr;
 
-      setMsg(`Successfully added ${newMemberEmail} as ${newMemberRole}!`);
+      setMsg(`Successfully added ${newMemberFullName} (${newMemberEmail}) as ${newMemberRole}!`);
       setTempPasswordGenerated(generatedPassword);
       setNewMemberEmail('');
+      setNewMemberFullName('');
       await loadSchoolData(user.id);
     } catch (err: any) {
       setMsg('Error adding member: ' + err.message);
@@ -178,7 +188,7 @@ export default function SchoolAdminPortal() {
   };
 
   const handleRemoveMember = async (member: SchoolMember) => {
-    if (!confirm(`Are you sure you want to completely delete ${member.profiles?.email || 'this user'}?`)) return;
+    if (!confirm(`Are you sure you want to completely delete ${member.profiles?.full_name || member.profiles?.email || 'this user'}?`)) return;
 
     try {
       const res = await fetch('/api/admin/delete-user', {
@@ -198,8 +208,8 @@ export default function SchoolAdminPortal() {
   };
 
   const handleResetPassword = async (member: SchoolMember) => {
-    const email = member.profiles?.email || 'User';
-    const newPassword = prompt(`Enter new temporary password for "${email}":`);
+    const name = member.profiles?.full_name || member.profiles?.email || 'User';
+    const newPassword = prompt(`Enter new temporary password for "${name}":`);
     if (!newPassword) return;
 
     try {
@@ -220,7 +230,6 @@ export default function SchoolAdminPortal() {
     }
   };
 
-  // 🔔 COORD. MESAJ ATTIĞINDA TÜM ÖĞRETMENLERE BİLDİRİM GİTME ÖZELLİĞİ
   const handleSendLoungeMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMsgText.trim()) return;
@@ -240,7 +249,6 @@ export default function SchoolAdminPortal() {
     setBroadcastMsg('Message posted and notifications sent to all faculty members!');
     setTimeout(() => setBroadcastMsg(''), 4000);
 
-    // Okuldaki tüm öğretmenlerin (teacher) user_id'lerini bulalım ve bildirim gönderelim
     const teachersList = members.filter(m => m.role === 'teacher');
     if (teachersList.length > 0) {
       const notificationRows = teachersList.map(t => ({
@@ -290,7 +298,7 @@ export default function SchoolAdminPortal() {
 
       <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
         
-        {/* Modern Coordinator Banner */}
+        {/* Banner */}
         <div 
           className="relative overflow-hidden rounded-3xl p-8 md:p-12 text-white shadow-xl flex flex-col justify-center border border-slate-800 print:hidden"
           style={{ 
@@ -312,7 +320,7 @@ export default function SchoolAdminPortal() {
           </div>
         </div>
 
-        {/* EE, CAS & Mock Exam Command Center Buttons */}
+        {/* EE, CAS & Mock Exam Buttons */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:hidden">
           <div 
             onClick={() => router.push('/school-admin/ee')}
@@ -357,7 +365,7 @@ export default function SchoolAdminPortal() {
           </div>
         </div>
 
-        {/* Quota Overview (20 Öğretmen / 100 Öğrenci) */}
+        {/* Quota Overview */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:hidden">
           <div className="p-6 bg-white border rounded-3xl shadow-sm space-y-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Faculty Members Quota</span>
@@ -369,13 +377,20 @@ export default function SchoolAdminPortal() {
           </div>
         </div>
 
-        {/* Add Member Panel */}
+        {/* Add Member Panel (Full Name ve Email Alanı Eklendi) */}
         <div className="p-6 bg-white border rounded-3xl shadow-sm space-y-4 print:hidden">
           <h3 className="font-bold text-sm text-slate-900">Add Teacher or Student (Auto-generates Temporary Password)</h3>
           <form onSubmit={handleAddMember} className="flex flex-col md:flex-row gap-3">
             <input 
+              type="text" 
+              placeholder="Full Name (e.g. Dr. Ahmet Yılmaz)" 
+              value={newMemberFullName} 
+              onChange={e => setNewMemberFullName(e.target.value)} 
+              className="px-4 py-2.5 border rounded-xl text-xs flex-1 bg-slate-50 text-slate-900 focus:outline-none" 
+            />
+            <input 
               type="email" 
-              placeholder="User Email Address" 
+              placeholder="Email Address" 
               value={newMemberEmail} 
               onChange={e => setNewMemberEmail(e.target.value)} 
               className="px-4 py-2.5 border rounded-xl text-xs flex-1 bg-slate-50 text-slate-900 focus:outline-none" 
@@ -502,7 +517,7 @@ export default function SchoolAdminPortal() {
                 <div className="space-y-4">
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-1">
                     <h4 className="font-bold text-xs text-amber-900">☕ Teachers' Lounge &amp; Announcements</h4>
-                    <p className="text-[11px] text-amber-700">Official coordination channel for faculty discussions, exam briefs, and announcements. Sending a message here automatically notifies all registered teachers.</p>
+                    <p className="text-[11px] text-amber-700">Official coordination channel for faculty discussions, exam briefs, and announcements.</p>
                   </div>
 
                   {broadcastMsg && <div className="p-3 bg-emerald-50 text-xs text-emerald-800 rounded-xl border border-emerald-200">{broadcastMsg}</div>}

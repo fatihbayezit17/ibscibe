@@ -14,7 +14,7 @@ interface EEOverviewItem {
   research_question?: string;
   rationale?: string;
   status: string;
-  student_profile?: { full_name: string; email: string };
+  student_profile?: { full_name: string; email: string; class_name?: string };
   supervisor_profile?: { full_name: string; email: string };
 }
 
@@ -22,6 +22,7 @@ interface UserProfile {
   id: string;
   full_name: string;
   email: string;
+  class_name?: string;
   role?: string;
 }
 
@@ -36,20 +37,24 @@ export default function SchoolAdminEEPortal() {
 
   const [activeTab, setActiveTab] = useState<'assignments' | 'groups'>('assignments');
 
-  const [selectedStudentId, setSelectedStudentId] = useState('');
-  const [selectedSupervisorId, setSelectedSupervisorId] = useState('');
-  const [subjectInput, setSubjectInput] = useState('');
-  const [pathwayInput, setPathwayInput] = useState<'subject-focused' | 'interdisciplinary'>('subject-focused');
+  // Toplu Atama Formu State'leri
+  const [selectedClassFilter, setSelectedClassFilter] = useState('IBDP-1A');
+  const [checkedStudentIds, setCheckedStudentIds] = useState<string[]>([]);
+  const [batchSupervisorId, setBatchSupervisorId] = useState('');
+  const [batchSubjectInput, setBatchSubjectInput] = useState('');
+  const [batchPathwayInput, setBatchPathwayInput] = useState<'subject-focused' | 'interdisciplinary'>('subject-focused');
+  const [msg, setMsg] = useState('');
 
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [msg, setMsg] = useState('');
 
-  // Koordinatörün Modal üzerinden öğrenci incelemesi için state'ler
+  // İnceleme Modalı
   const [inspectingEE, setInspectingEE] = useState<EEOverviewItem | null>(null);
   const [rrsEntries, setRrsEntries] = useState<any[]>([]);
   const [reflections, setReflections] = useState<any[]>([]);
   const [evaluationData, setEvaluationData] = useState<any>(null);
+
+  const classesList = ['IBDP-1A', 'IBDP-1B', 'IBDP-2A', 'IBDP-2B'];
 
   useEffect(() => {
     initAdminPortal();
@@ -76,9 +81,9 @@ export default function SchoolAdminEEPortal() {
       const enhanced = await Promise.all(eeData.map(async (ee) => {
         const { data: studentProf } = await supabase
           .from('profiles')
-          .select('full_name, email')
+          .select('full_name, email, class_name')
           .eq('id', ee.student_id)
-          .single();
+          .maybeSingle();
 
         let supervisorProf = null;
         if (ee.supervisor_id) {
@@ -86,13 +91,13 @@ export default function SchoolAdminEEPortal() {
             .from('profiles')
             .select('full_name, email')
             .eq('id', ee.supervisor_id)
-            .single();
+            .maybeSingle();
           supervisorProf = supData;
         }
 
         return {
           ...ee,
-          student_profile: studentProf || { full_name: 'Unknown Student', email: '' },
+          student_profile: studentProf || { full_name: 'Unknown Student', email: '', class_name: 'IBDP-1A' },
           supervisor_profile: supervisorProf || { full_name: 'Unassigned', email: '' }
         };
       }));
@@ -108,7 +113,7 @@ export default function SchoolAdminEEPortal() {
 
     const { data: profs } = await supabase
       .from('profiles')
-      .select('id, full_name, email')
+      .select('id, full_name, email, class_name')
       .order('full_name', { ascending: true });
 
     if (profs) {
@@ -131,79 +136,99 @@ export default function SchoolAdminEEPortal() {
 
   const handleInspectStudent = async (ee: EEOverviewItem) => {
     setInspectingEE(ee);
-    // RRS notlarını çek
     const { data: rrs } = await supabase.from('ee_rrs_entries').select('*').eq('ee_id', ee.id).order('created_at', { ascending: false });
     setRrsEntries(rrs || []);
 
-    // Yansımaları çek
     const { data: refs } = await supabase.from('ee_reflections').select('*').eq('ee_id', ee.id).order('session_number', { ascending: true });
     setReflections(refs || []);
 
-    // Değerlendirme / Taslak verisini çek
     const { data: evalData } = await supabase.from('ee_evaluations').select('*').eq('ee_id', ee.id).maybeSingle();
     setEvaluationData(evalData || null);
   };
 
-  const handleCreateNewEEAssignment = async (e: React.FormEvent) => {
+  // 🎯 TOPLU ÖĞRENCİ ATAMA (BATCH ASSIGNMENT) İŞLEMİ
+  const handleBatchAssign = async (e: React.FormEvent) => {
     e.preventDefault();
     setMsg('');
-    if (!selectedStudentId || !subjectInput.trim()) {
-      alert('Please select a student and enter at least a subject.');
+
+    if (checkedStudentIds.length === 0) {
+      alert('Please select at least one student by checking the box.');
+      return;
+    }
+    if (!batchSubjectInput.trim()) {
+      alert('Please enter a subject or disciplines.');
       return;
     }
 
-    const { data: existing } = await supabase
-      .from('extended_essays')
-      .select('id')
-      .eq('student_id', selectedStudentId)
-      .maybeSingle();
+    try {
+      for (const studentId of checkedStudentIds) {
+        // Öğrencinin daha önce EE kaydı var mı kontrol edelim
+        const { data: existing } = await supabase
+          .from('extended_essays')
+          .select('id')
+          .eq('student_id', studentId)
+          .maybeSingle();
 
-    if (existing) {
-      const { error } = await supabase
-        .from('extended_essays')
-        .update({
-          supervisor_id: selectedSupervisorId || null,
-          subject_or_subjects: subjectInput.trim(),
-          pathway: pathwayInput
-        })
-        .eq('id', existing.id);
+        if (existing) {
+          // Güncelle
+          await supabase
+            .from('extended_essays')
+            .update({
+              supervisor_id: batchSupervisorId || null,
+              subject_or_subjects: batchSubjectInput.trim(),
+              pathway: batchPathwayInput
+            })
+            .eq('id', existing.id);
+        } else {
+          // Yeni ekle
+          const { data: newEE, error: insErr } = await supabase
+            .from('extended_essays')
+            .insert([{
+              student_id: studentId,
+              supervisor_id: batchSupervisorId || null,
+              subject_or_subjects: batchSubjectInput.trim(),
+              pathway: batchPathwayInput,
+              status: 'draft'
+            }])
+            .select()
+            .single();
 
-      if (error) alert('Error updating EE assignment: ' + error.message);
-      else {
-        alert('EE assignment successfully updated!');
-        setSelectedStudentId('');
-        setSelectedSupervisorId('');
-        setSubjectInput('');
-        await loadData();
+          if (!insErr && newEE) {
+            await supabase.from('ee_reflections').insert([
+              { ee_id: newEE.id, session_number: 1 },
+              { ee_id: newEE.id, session_number: 2 },
+              { ee_id: newEE.id, session_number: 3 }
+            ]);
+          }
+        }
       }
+
+      alert(`Successfully assigned ${checkedStudentIds.length} students to supervisor & subject!`);
+      setCheckedStudentIds([]);
+      setBatchSubjectInput('');
+      setBatchSupervisorId('');
+      await loadData();
+    } catch (err: any) {
+      alert('Error during batch assignment: ' + err.message);
+    }
+  };
+
+  const handleToggleCheckAll = (classStudents: UserProfile[]) => {
+    const classStudentIds = classStudents.map(s => s.id);
+    const allChecked = classStudentIds.every(id => checkedStudentIds.includes(id));
+    if (allChecked) {
+      setCheckedStudentIds(checkedStudentIds.filter(id => !classStudentIds.includes(id)));
     } else {
-      const { data: newEE, error } = await supabase
-        .from('extended_essays')
-        .insert([{
-          student_id: selectedStudentId,
-          supervisor_id: selectedSupervisorId || null,
-          subject_or_subjects: subjectInput.trim(),
-          pathway: pathwayInput,
-          status: 'draft'
-        }])
-        .select()
-        .single();
+      const merged = Array.from(new Set([...checkedStudentIds, ...classStudentIds]));
+      setCheckedStudentIds(merged);
+    }
+  };
 
-      if (error) {
-        alert('Error creating EE record: ' + error.message);
-      } else if (newEE) {
-        await supabase.from('ee_reflections').insert([
-          { ee_id: newEE.id, session_number: 1 },
-          { ee_id: newEE.id, session_number: 2 },
-          { ee_id: newEE.id, session_number: 3 }
-        ]);
-
-        alert('New student successfully added to EE portal and assigned!');
-        setSelectedStudentId('');
-        setSelectedSupervisorId('');
-        setSubjectInput('');
-        await loadData();
-      }
+  const handleToggleCheckStudent = (studentId: string) => {
+    if (checkedStudentIds.includes(studentId)) {
+      setCheckedStudentIds(checkedStudentIds.filter(id => id !== studentId));
+    } else {
+      setCheckedStudentIds([...checkedStudentIds, studentId]);
     }
   };
 
@@ -214,29 +239,33 @@ export default function SchoolAdminEEPortal() {
       .update({ supervisor_id: supIdVal })
       .eq('id', eeId);
 
-    if (error) {
-      alert('Error assigning supervisor: ' + error.message);
-    } else {
-      alert('Supervisor successfully updated!');
-      await loadData();
-    }
+    if (error) alert('Error assigning supervisor: ' + error.message);
+    else await loadData();
   };
 
-  const handleUpdateSubject = async (eeId: string, currentSubject: string) => {
-    const newSubject = prompt('Enter new subject or disciplines:', currentSubject);
-    if (!newSubject || !newSubject.trim()) return;
+  const handleEditEE = async (ee: EEOverviewItem) => {
+    const newSubject = prompt('Edit Subject or Disciplines:', ee.subject_or_subjects);
+    if (newSubject === null) return;
+
+    const newPathway = prompt('Edit Pathway ("subject-focused" or "interdisciplinary"):', ee.pathway);
+    if (newPathway === null) return;
 
     const { error } = await supabase
       .from('extended_essays')
-      .update({ subject_or_subjects: newSubject.trim() })
-      .eq('id', eeId);
+      .update({ subject_or_subjects: newSubject.trim() || ee.subject_or_subjects, pathway: newPathway })
+      .eq('id', ee.id);
 
-    if (error) {
-      alert('Error updating subject: ' + error.message);
-    } else {
-      alert('Subject successfully updated!');
-      await loadData();
-    }
+    if (error) alert('Error: ' + error.message);
+    else await loadData();
+  };
+
+  const handleDeleteEE = async (eeId: string, studentName: string) => {
+    if (!confirm(`Are you sure you want to remove ${studentName} from the EE portal?`)) return;
+    await supabase.from('ee_reflections').delete().eq('ee_id', eeId);
+    await supabase.from('ee_rrs_entries').delete().eq('ee_id', eeId);
+    await supabase.from('ee_evaluations').delete().eq('ee_id', eeId);
+    await supabase.from('extended_essays').delete().eq('id', eeId);
+    await loadData();
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-600">Loading School Admin EE Command Center...</div>;
@@ -246,32 +275,17 @@ export default function SchoolAdminEEPortal() {
     const matchesSearch = 
       ee.student_profile?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       ee.subject_or_subjects?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ee.essay_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       ee.research_question?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesStatus && matchesSearch;
   });
 
-  const teacherGroupsMap = new Map<string, { teacher: UserProfile; students: EEOverviewItem[] }>();
-  
-  teachers.forEach(t => {
-    teacherGroupsMap.set(t.id, { teacher: t, students: [] });
-  });
-
-  const unassignedGroup: EEOverviewItem[] = [];
-
-  allEssays.forEach(ee => {
-    if (ee.supervisor_id && teacherGroupsMap.has(ee.supervisor_id)) {
-      teacherGroupsMap.get(ee.supervisor_id)!.students.push(ee);
-    } else {
-      unassignedGroup.push(ee);
-    }
-  });
+  const studentsInSelectedClass = students.filter(st => (st.class_name || 'IBDP-1A') === selectedClassFilter);
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col relative">
-      {/* Koordinatör Öğrenci İnceleme Modalı */}
+      {/* İnceleme Modalı */}
       {inspectingEE && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-3xl w-full p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-4">
               <div>
@@ -288,55 +302,38 @@ export default function SchoolAdminEEPortal() {
               </div>
 
               <div className="p-4 bg-slate-50 rounded-2xl border space-y-1">
-                <span className="font-bold text-slate-400 block text-[10px] uppercase">Research Question &amp; Rationale</span>
+                <span className="font-bold text-slate-400 block text-[10px] uppercase">Research Question</span>
                 <p className="font-serif text-slate-900 font-semibold mt-1">"{inspectingEE.research_question || 'No research question defined.'}"</p>
-                <p className="text-slate-600 mt-2">{inspectingEE.rationale || 'No rationale provided.'}</p>
               </div>
 
-              {/* RRS & Ref */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-4 bg-slate-50 rounded-2xl border space-y-2">
-                  <span className="font-bold text-slate-400 block text-[10px] uppercase">RRS &amp; AI Prompt Log ({rrsEntries.length})</span>
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {rrsEntries.length === 0 ? <p className="text-slate-400 italic">No entries yet.</p> : rrsEntries.map(e => (
+                  <span className="font-bold text-slate-400 block text-[10px] uppercase">RRS Entries ({rrsEntries.length})</span>
+                  <div className="max-h-40 overflow-y-auto space-y-1.5">
+                    {rrsEntries.map(e => (
                       <div key={e.id} className="p-2 bg-white rounded border text-[11px]">
-                        <span className="font-bold text-indigo-700 uppercase text-[9px]">{e.entry_type}</span>: {e.content}
+                        <span className="font-bold text-indigo-700 uppercase">{e.entry_type}</span>: {e.content}
                       </div>
                     ))}
                   </div>
                 </div>
 
                 <div className="p-4 bg-slate-50 rounded-2xl border space-y-2">
-                  <span className="font-bold text-slate-400 block text-[10px] uppercase">Reflection Sessions ({reflections.length})</span>
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {reflections.length === 0 ? <p className="text-slate-400 italic">No sessions recorded.</p> : reflections.map(r => (
+                  <span className="font-bold text-slate-400 block text-[10px] uppercase">Reflections ({reflections.length})</span>
+                  <div className="max-h-40 overflow-y-auto space-y-1.5">
+                    {reflections.map(r => (
                       <div key={r.id} className="p-2 bg-white rounded border text-[11px]">
                         <div className="font-bold text-slate-800">Session {r.session_number}</div>
-                        <p className="text-slate-600">{r.student_notes || 'Pending notes.'}</p>
+                        <p className="text-slate-600">{r.student_notes || 'Pending.'}</p>
                       </div>
                     ))}
                   </div>
                 </div>
-              </div>
-
-              {/* Taslak ve Değerlendirme */}
-              <div className="p-4 bg-amber-50/50 rounded-2xl border border-amber-200 space-y-2">
-                <span className="font-bold text-amber-800 block text-[10px] uppercase">Draft &amp; Supervisor Feedback</span>
-                <p className="font-serif text-slate-800 max-h-32 overflow-y-auto whitespace-pre-line text-[11px]">
-                  {evaluationData?.draft_content || 'No draft submitted yet.'}
-                </p>
-                {evaluationData?.supervisor_feedback && (
-                  <div className="pt-2 border-t border-amber-200 mt-2 text-slate-700 font-medium">
-                    <b>Supervisor Guidance:</b> {evaluationData.supervisor_feedback}
-                  </div>
-                )}
               </div>
             </div>
 
             <div className="flex justify-end pt-4 border-t">
-              <button onClick={() => setInspectingEE(null)} className="px-6 py-2.5 bg-indigo-900 hover:bg-indigo-800 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer">
-                Back to Working Groups
-              </button>
+              <button onClick={() => setInspectingEE(null)} className="px-6 py-2.5 bg-indigo-900 text-white font-bold text-xs rounded-xl cursor-pointer">Close Inspection</button>
             </div>
           </div>
         </div>
@@ -353,6 +350,8 @@ export default function SchoolAdminEEPortal() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
+        
+        {/* İstatistikler */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="p-6 bg-white border rounded-3xl shadow-sm space-y-1">
             <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">Total EE Students</span>
@@ -372,119 +371,162 @@ export default function SchoolAdminEEPortal() {
           </div>
         </div>
 
+        {/* Sekmeler */}
         <div className="flex items-center gap-3 border-b pb-4">
           <button 
             onClick={() => setActiveTab('assignments')}
             className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'assignments' ? 'bg-indigo-900 text-white shadow-md' : 'bg-white text-slate-600 border'}`}
           >
-            📋 Assignments &amp; Management
+            🎯 Sınıf Bazlı Toplu Atama &amp; Yönetim
           </button>
           <button 
             onClick={() => setActiveTab('groups')}
             className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'groups' ? 'bg-indigo-900 text-white shadow-md' : 'bg-white text-slate-600 border'}`}
           >
-            👥 Working Groups (Supervisor / Students)
+            👥 Öğretmen Grupları (Supervisors)
           </button>
         </div>
 
-        <div className="p-8 bg-white border rounded-3xl shadow-sm space-y-4">
-          <div>
-            <h3 className="font-extrabold text-sm text-slate-900">Add Student to EE Portal &amp; Assign Supervisor</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Select a registered student from your school, choose their subject/pathway, and assign an EE supervisor teacher.</p>
-          </div>
-
-          <form onSubmit={handleCreateNewEEAssignment} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
-            <div className="md:col-span-1">
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">Student</label>
-              <select 
-                value={selectedStudentId} 
-                onChange={e => setSelectedStudentId(e.target.value)}
-                className="w-full p-2.5 border rounded-xl text-xs bg-slate-50 font-medium"
-              >
-                <option value="">-- Select Student --</option>
-                {students.map(st => (
-                  <option key={st.id} value={st.id}>{st.full_name} ({st.email})</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="md:col-span-1">
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">Pathway &amp; Subject</label>
-              <input 
-                type="text" 
-                placeholder="e.g. English B / History" 
-                value={subjectInput} 
-                onChange={e => setSubjectInput(e.target.value)}
-                className="w-full p-2.5 border rounded-xl text-xs bg-slate-50 font-medium"
-              />
-            </div>
-
-            <div className="md:col-span-1">
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">Pathway Type</label>
-              <select 
-                value={pathwayInput} 
-                onChange={e => setPathwayInput(e.target.value as any)}
-                className="w-full p-2.5 border rounded-xl text-xs bg-slate-50 font-bold"
-              >
-                <option value="subject-focused">Subject-focused</option>
-                <option value="interdisciplinary">Interdisciplinary</option>
-              </select>
-            </div>
-
-            <div className="md:col-span-1">
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">Supervisor Teacher</label>
-              <select 
-                value={selectedSupervisorId} 
-                onChange={e => setSelectedSupervisorId(e.target.value)}
-                className="w-full p-2.5 border rounded-xl text-xs bg-slate-50 font-bold text-indigo-900"
-              >
-                <option value="">-- Assign Supervisor --</option>
-                {teachers.map(t => (
-                  <option key={t.id} value={t.id}>{t.full_name} ({t.email})</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="md:col-span-1">
-              <button type="submit" className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer">
-                Add / Assign EE ➔
-              </button>
-            </div>
-          </form>
-          {msg && <div className="p-3 bg-indigo-50 text-xs text-indigo-800 rounded-xl border border-indigo-200">{msg}</div>}
-        </div>
-
+        {/* 🎯 SINIF SEÇMELİ TOPLU ÖĞRENCİ ATAMA PANELİ */}
         {activeTab === 'assignments' && (
           <div className="space-y-6">
-            <div className="p-6 bg-white border rounded-3xl shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="w-full md:w-96">
+            <div className="p-8 bg-white border rounded-3xl shadow-sm space-y-6">
+              <div className="border-b pb-4">
+                <span className="text-[10px] font-mono uppercase bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg font-bold border border-indigo-200">Batch Assignment Wizard</span>
+                <h3 className="font-extrabold text-base text-slate-900 mt-2">Class-Based Multi-Student Assignment</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Select a class, check multiple students, and assign them simultaneously to a supervisor and subject.</p>
+              </div>
+
+              <form onSubmit={handleBatchAssign} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">1. Select Class</label>
+                    <select 
+                      value={selectedClassFilter} 
+                      onChange={e => { setSelectedClassFilter(e.target.value); setCheckedStudentIds([]); }}
+                      className="w-full p-3 border rounded-xl text-xs bg-slate-50 font-bold"
+                    >
+                      {classesList.map(cls => (
+                        <option key={cls} value={cls}>{cls}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">2. Subject or Disciplines</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. English B / History" 
+                      value={batchSubjectInput} 
+                      onChange={e => setBatchSubjectInput(e.target.value)}
+                      className="w-full p-3 border rounded-xl text-xs bg-slate-50 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">3. Pathway Type</label>
+                    <select 
+                      value={batchPathwayInput} 
+                      onChange={e => setBatchPathwayInput(e.target.value as any)}
+                      className="w-full p-3 border rounded-xl text-xs bg-slate-50 font-bold"
+                    >
+                      <option value="subject-focused">Subject-focused</option>
+                      <option value="interdisciplinary">Interdisciplinary</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">4. Supervisor Teacher</label>
+                    <select 
+                      value={batchSupervisorId} 
+                      onChange={e => setBatchSupervisorId(e.target.value)}
+                      className="w-full p-3 border rounded-xl text-xs bg-slate-50 font-bold text-indigo-900"
+                    >
+                      <option value="">-- Select Supervisor --</option>
+                      {teachers.map(t => (
+                        <option key={t.id} value={t.id}>{t.full_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Sınıftaki Öğrenciler Listesi ve Tik Kutuları */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                      Students in {selectedClassFilter} ({studentsInSelectedClass.length} available)
+                    </span>
+                    <button 
+                      type="button" 
+                      onClick={() => handleToggleCheckAll(studentsInSelectedClass)}
+                      className="text-xs font-bold text-indigo-600 hover:underline cursor-pointer"
+                    >
+                      Select All / Deselect All in {selectedClassFilter}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-60 overflow-y-auto p-2 bg-slate-50 rounded-2xl border">
+                    {studentsInSelectedClass.length === 0 ? (
+                      <p className="col-span-3 text-xs text-slate-400 italic py-6 text-center">No students found registered in {selectedClassFilter}.</p>
+                    ) : (
+                      studentsInSelectedClass.map(st => {
+                        const isChecked = checkedStudentIds.includes(st.id);
+                        return (
+                          <div 
+                            key={st.id} 
+                            onClick={() => handleToggleCheckStudent(st.id)}
+                            className={`p-3 rounded-xl border flex items-center space-x-3 cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 shadow-xs' : 'bg-white border-slate-200'}`}
+                          >
+                            <input 
+                              type="checkbox" 
+                              checked={isChecked} 
+                              onChange={() => {}} 
+                              className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
+                            />
+                            <div className="overflow-hidden">
+                              <div className="font-bold text-xs text-slate-900 truncate">{st.full_name}</div>
+                              <div className="text-[10px] text-slate-400 truncate">{st.email}</div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-xs font-bold text-indigo-700">
+                    ✓ {checkedStudentIds.length} student(s) selected for assignment.
+                  </span>
+                  <button type="submit" className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer">
+                    Apply Batch Assignment ➔
+                  </button>
+                </div>
+              </form>
+
+              {msg && <div className="p-3 bg-indigo-50 text-xs text-indigo-800 rounded-xl border border-indigo-200">{msg}</div>}
+            </div>
+
+            {/* Kayıtlı EE Listesi ve Tablo */}
+            <div className="p-6 bg-white border rounded-3xl shadow-sm space-y-4">
+              <div className="flex flex-col md:flex-row gap-4 items-center justify-between border-b pb-4">
                 <input 
                   type="text" 
-                  placeholder="Search by student, subject, title, or RQ..." 
+                  placeholder="Search students, subjects, research questions..." 
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
-                  className="w-full p-3 border rounded-xl text-xs bg-slate-50 font-medium"
+                  className="w-full md:w-80 p-3 border rounded-xl text-xs bg-slate-50"
                 />
-              </div>
-              <div className="flex items-center gap-2 w-full md:w-auto justify-end">
                 <select 
                   value={filterStatus}
                   onChange={e => setFilterStatus(e.target.value)}
-                  className="p-3 border rounded-xl text-xs bg-slate-50 font-bold"
+                  className="w-full md:w-auto p-3 border rounded-xl text-xs bg-slate-50 font-bold"
                 >
                   <option value="all">All Statuses</option>
                   <option value="draft">Draft</option>
-                  <option value="submitted_rq">Submitted RQ (Pending)</option>
+                  <option value="submitted_rq">Submitted RQ</option>
                   <option value="approved_rq">Approved RQ</option>
-                  <option value="completed">Completed</option>
                 </select>
-              </div>
-            </div>
-
-            <div className="bg-white border rounded-3xl shadow-sm overflow-hidden">
-              <div className="p-6 border-b flex justify-between items-center">
-                <h3 className="font-extrabold text-sm text-slate-900">Active Extended Essay Working Groups &amp; Assignments</h3>
-                <span className="text-xs font-bold text-slate-500">Showing {filteredEssays.length} records</span>
               </div>
 
               <div className="overflow-x-auto">
@@ -492,43 +534,37 @@ export default function SchoolAdminEEPortal() {
                   <thead>
                     <tr className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-500 tracking-wider">
                       <th className="p-4">Student</th>
-                      <th className="p-4">Pathway &amp; Subject</th>
-                      <th className="p-4">Essay Title &amp; Research Question</th>
-                      <th className="p-4">Assigned Supervisor</th>
+                      <th className="p-4">Class</th>
+                      <th className="p-4">Subject &amp; Pathway</th>
+                      <th className="p-4">Research Question</th>
+                      <th className="p-4">Supervisor</th>
                       <th className="p-4">Status</th>
+                      <th className="p-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y text-xs">
                     {filteredEssays.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="p-12 text-center text-slate-400 italic">No extended essays found matching your criteria.</td>
+                        <td colSpan={7} className="p-12 text-center text-slate-400 italic">No extended essays found.</td>
                       </tr>
                     ) : (
                       filteredEssays.map(ee => (
-                        <tr key={ee.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="p-4 align-top">
-                            <div className="font-extrabold text-slate-900">{ee.student_profile?.full_name}</div>
-                            <div className="text-[11px] text-slate-400 font-mono">{ee.student_profile?.email}</div>
+                        <tr key={ee.id} className="hover:bg-slate-50">
+                          <td className="p-4 align-top font-bold text-slate-900">
+                            {ee.student_profile?.full_name}
+                            <div className="text-[10px] text-slate-400 font-mono">{ee.student_profile?.email}</div>
                           </td>
                           <td className="p-4 align-top">
-                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 mb-1">
-                              {ee.pathway}
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800 border">
+                              {ee.student_profile?.class_name || 'IBDP-1A'}
                             </span>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="font-bold text-slate-800">{ee.subject_or_subjects}</span>
-                              <button 
-                                onClick={() => handleUpdateSubject(ee.id, ee.subject_or_subjects)}
-                                className="text-[10px] text-indigo-600 underline font-semibold cursor-pointer"
-                              >
-                                Edit Subject
-                              </button>
-                            </div>
                           </td>
-                          <td className="p-4 align-top max-w-xs">
-                            <div className="font-bold text-slate-900">{ee.essay_title || 'Untitled Essay'}</div>
-                            <div className="text-slate-600 font-serif italic mt-1 bg-slate-50 p-2 rounded-xl border">
-                              "{ee.research_question || 'No research question defined yet.'}"
-                            </div>
+                          <td className="p-4 align-top">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border">{ee.pathway}</span>
+                            <div className="font-semibold text-slate-800 mt-1">{ee.subject_or_subjects}</div>
+                          </td>
+                          <td className="p-4 align-top max-w-xs font-serif italic text-slate-700">
+                            "{ee.research_question || 'Pending RQ'}"
                           </td>
                           <td className="p-4 align-top">
                             <select 
@@ -536,16 +572,21 @@ export default function SchoolAdminEEPortal() {
                               onChange={(e) => handleAssignSupervisor(ee.id, e.target.value)}
                               className="p-2 border rounded-xl text-xs bg-white font-bold text-indigo-900 shadow-xs"
                             >
-                              <option value="">-- Assign Supervisor --</option>
+                              <option value="">-- Assign --</option>
                               {teachers.map(t => (
-                                <option key={t.id} value={t.id}>{t.full_name} ({t.email})</option>
+                                <option key={t.id} value={t.id}>{t.full_name}</option>
                               ))}
                             </select>
                           </td>
                           <td className="p-4 align-top">
-                            <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase ${ee.status === 'approved_rq' ? 'bg-emerald-100 text-emerald-800' : ee.status === 'submitted_rq' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-indigo-100 text-indigo-800">
                               {ee.status}
                             </span>
+                          </td>
+                          <td className="p-4 align-top text-right space-x-1.5">
+                            <button onClick={() => handleInspectStudent(ee)} className="px-2.5 py-1 bg-slate-900 text-white rounded-lg font-bold text-[11px] cursor-pointer">Inspect</button>
+                            <button onClick={() => handleEditEE(ee)} className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg font-bold text-[11px] border cursor-pointer">Edit</button>
+                            <button onClick={() => handleDeleteEE(ee.id, ee.student_profile?.full_name || 'Student')} className="px-2.5 py-1 bg-rose-50 text-rose-700 rounded-lg font-bold text-[11px] border cursor-pointer">Delete</button>
                           </td>
                         </tr>
                       ))
@@ -557,104 +598,51 @@ export default function SchoolAdminEEPortal() {
           </div>
         )}
 
+        {/* Öğretmen Grupları Sekmesi */}
         {activeTab === 'groups' && (
           <div className="space-y-6">
             <div className="p-6 bg-white border rounded-3xl shadow-sm">
               <h3 className="font-extrabold text-sm text-slate-900">Teacher Supervisory Groups</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Hierarchical view of supervisors and their supervised students. Click on any student to review their work.</p>
+              <p className="text-xs text-slate-500 mt-0.5">Hierarchical view of supervisors and their supervised students across classes.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {Array.from(teacherGroupsMap.values()).map(group => (
-                <div key={group.teacher.id} className="p-6 bg-white border-2 border-slate-200 rounded-3xl shadow-sm space-y-4">
-                  <div className="flex items-center justify-between border-b pb-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-700 font-black flex items-center justify-center border border-indigo-200">
-                        👨‍🏫
-                      </div>
+              {teachers.map(t => {
+                const supervised = allEssays.filter(ee => ee.supervisor_id === t.id);
+                return (
+                  <div key={t.id} className="p-6 bg-white border rounded-3xl shadow-sm space-y-4">
+                    <div className="flex items-center justify-between border-b pb-3">
                       <div>
-                        <h4 className="font-extrabold text-slate-900">{group.teacher.full_name}</h4>
-                        <p className="text-[11px] text-slate-500 font-mono">{group.teacher.email} • <span className="text-indigo-600 font-bold uppercase">{group.teacher.role || 'Teacher'}</span></p>
+                        <h4 className="font-extrabold text-slate-900">{t.full_name}</h4>
+                        <p className="text-[11px] text-slate-500">{t.email}</p>
                       </div>
+                      <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full border">
+                        {supervised.length} Students
+                      </span>
                     </div>
-                    <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs font-black rounded-full">
-                      {group.students.length} Students
-                    </span>
-                  </div>
 
-                  <div className="space-y-2">
-                    <h5 className="text-[10px] font-mono uppercase tracking-wider text-slate-400">Supervised Students</h5>
-                    {group.students.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic py-2">No students assigned to this teacher yet.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {group.students.map(st => (
-                          <div 
-                            key={st.id} 
-                            onClick={() => handleInspectStudent(st)}
-                            className="p-3 bg-slate-50 hover:bg-indigo-50/50 border rounded-2xl flex items-center justify-between cursor-pointer transition-all group"
-                          >
+                    <div className="space-y-2">
+                      {supervised.length === 0 ? (
+                        <p className="text-xs text-slate-400 italic">No students assigned yet.</p>
+                      ) : (
+                        supervised.map(st => (
+                          <div key={st.id} className="p-3 bg-slate-50 border rounded-2xl flex items-center justify-between text-xs">
                             <div>
-                              <div className="font-bold text-xs text-slate-900 group-hover:text-indigo-600 transition-colors">
-                                {st.student_profile?.full_name}
-                              </div>
-                              <div className="text-[11px] text-slate-500">
-                                Subject: <b className="text-slate-800">{st.subject_or_subjects}</b> • Status: <span className="text-indigo-700 font-semibold">{st.status}</span>
-                              </div>
+                              <div className="font-bold text-slate-900">{st.student_profile?.full_name} ({st.student_profile?.class_name || 'IBDP-1A'})</div>
+                              <div className="text-[11px] text-slate-500">{st.subject_or_subjects}</div>
                             </div>
-                            <span className="text-xs font-bold text-indigo-600 group-hover:translate-x-1 transition-transform">
-                              Inspect ➔
-                            </span>
+                            <button onClick={() => handleInspectStudent(st)} className="text-indigo-600 font-bold hover:underline cursor-pointer">Inspect ➔</button>
                           </div>
-                        ))}
-                      </div>
-                    )}
+                        ))
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
-
-            {unassignedGroup.length > 0 && (
-              <div className="p-6 bg-amber-50/50 border-2 border-amber-300 rounded-3xl shadow-sm space-y-4">
-                <div className="flex items-center justify-between border-b border-amber-200 pb-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 font-black flex items-center justify-center border border-amber-200">
-                      ⚠️
-                    </div>
-                    <div>
-                      <h4 className="font-extrabold text-amber-900">Unassigned Students (Awaiting Supervisor)</h4>
-                      <p className="text-xs text-amber-700">These students are in the EE portal but do not have an assigned supervisor teacher yet.</p>
-                    </div>
-                  </div>
-                  <span className="px-3 py-1 bg-amber-200 text-amber-900 text-xs font-black rounded-full">
-                    {unassignedGroup.length} Students
-                  </span>
-                </div>
-
-                <div className="space-y-2">
-                  {unassignedGroup.map(st => (
-                    <div key={st.id} className="p-3 bg-white border border-amber-200 rounded-2xl flex items-center justify-between">
-                      <div>
-                        <div className="font-bold text-xs text-slate-900">{st.student_profile?.full_name}</div>
-                        <div className="text-[11px] text-slate-500">Subject: <b className="text-slate-800">{st.subject_or_subjects}</b></div>
-                      </div>
-                      <select 
-                        value=""
-                        onChange={(e) => handleAssignSupervisor(st.id, e.target.value)}
-                        className="p-2 border rounded-xl text-xs bg-white font-bold text-indigo-900 shadow-xs"
-                      >
-                        <option value="">Assign Supervisor Now</option>
-                        {teachers.map(t => (
-                          <option key={t.id} value={t.id}>{t.full_name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
+
       </main>
     </div>
   );
