@@ -120,7 +120,8 @@ export default function StudentDashboardPortal() {
       .eq('student_id', user.id)
       .order('created_at', { ascending: false });
 
-    const unreadSubs = (subs || []).filter(s => s.teacher_feedback && s.is_read_by_student === false);
+    // Okunmamış bildirimleri doğru yakalayabilmek için false veya null kontrolü eklendi
+    const unreadSubs = (subs || []).filter(s => s.teacher_feedback && (s.is_read_by_student === false || s.is_read_by_student === null));
     const latestWithFeedback = (subs || []).find(s => s.teacher_feedback) || null;
 
     let tasksList: any[] = [];
@@ -201,7 +202,7 @@ export default function StudentDashboardPortal() {
       alert('No teacher feedback available yet.');
       return;
     }
-    if (data.latestSubmissionWithFeedback.is_read_by_student === false) {
+    if (data.latestSubmissionWithFeedback.is_read_by_student === false || data.latestSubmissionWithFeedback.is_read_by_student === null) {
       await supabase.from('submissions').update({ is_read_by_student: true }).eq('id', data.latestSubmissionWithFeedback.id);
       setData(prev => ({ ...prev, unreadCount: 0 }));
     }
