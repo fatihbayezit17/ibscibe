@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">IBScripe</string>
+    <string name="title_activity_main">IBScripe</string>
+    <string name="package_name">com.ibscribe.app</string>
+    <string name="custom_url_scheme">com.ibscribe.app</string>
+</resources>
