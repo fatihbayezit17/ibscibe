@@ -156,10 +156,16 @@ export default function SchoolAdminPortal() {
         })
       });
 
-      const resData = await res.json();
+      const textRes = await res.text();
+      let resData;
+      try {
+        resData = JSON.parse(textRes);
+      } catch {
+        throw new Error('Server returned invalid JSON response: ' + textRes);
+      }
+
       if (!res.ok) throw new Error(resData.error || 'Failed to create user account.');
 
-      // Profili Ad, Soyad, E-posta ve Sınıf bilgisi ile güncelleyelim
       const { error: profErr } = await supabase.from('profiles').upsert({
         id: resData.userId,
         full_name: newMemberFullName.trim(),
@@ -187,6 +193,7 @@ export default function SchoolAdminPortal() {
     }
   };
 
+  // GÜVENLİ ÜYE SİLME FONKSİYONU (HTML/JSON Ayrıştırma Korumalı)
   const handleRemoveMember = async (member: SchoolMember) => {
     if (!confirm(`Are you sure you want to completely delete ${member.profiles?.full_name || member.profiles?.email || 'this user'}?`)) return;
 
@@ -197,7 +204,14 @@ export default function SchoolAdminPortal() {
         body: JSON.stringify({ userId: member.user_id })
       });
 
-      const resData = await res.json();
+      const textRes = await res.text();
+      let resData;
+      try {
+        resData = JSON.parse(textRes);
+      } catch {
+        throw new Error('Server returned unexpected HTML error page. Check Vercel logs.');
+      }
+
       if (!res.ok) throw new Error(resData.error || 'Failed to delete user account.');
 
       await loadSchoolData(user.id);
@@ -219,7 +233,14 @@ export default function SchoolAdminPortal() {
         body: JSON.stringify({ userId: member.user_id, newPassword })
       });
 
-      const data = await res.json();
+      const textRes = await res.text();
+      let data;
+      try {
+        data = JSON.parse(textRes);
+      } catch {
+        throw new Error('Server returned unexpected HTML response.');
+      }
+
       if (res.ok) {
         alert(`Password successfully updated!\nNew Password: ${newPassword}`);
       } else {
@@ -377,7 +398,7 @@ export default function SchoolAdminPortal() {
           </div>
         </div>
 
-        {/* Add Member Panel (Full Name ve Email Alanı Eklendi) */}
+        {/* Add Member Panel */}
         <div className="p-6 bg-white border rounded-3xl shadow-sm space-y-4 print:hidden">
           <h3 className="font-bold text-sm text-slate-900">Add Teacher or Student (Auto-generates Temporary Password)</h3>
           <form onSubmit={handleAddMember} className="flex flex-col md:flex-row gap-3">
