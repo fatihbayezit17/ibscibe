@@ -15,11 +15,21 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { userId, newPassword } = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: 'Geçersiz JSON gövdesi (Invalid JSON body)' },
+        { status: 400 }
+      );
+    }
+
+    const { userId, newPassword } = body;
 
     if (!userId || !newPassword) {
       return NextResponse.json(
-        { error: 'Kullanıcı ID ve yeni şifre gereklidir.' },
+        { success: false, error: 'Kullanıcı ID ve yeni şifre gereklidir.' },
         { status: 400 }
       );
     }
@@ -31,7 +41,10 @@ export async function POST(request: Request) {
     );
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 400 }
+      );
     }
 
     return NextResponse.json({
@@ -41,7 +54,7 @@ export async function POST(request: Request) {
     });
   } catch (err: any) {
     return NextResponse.json(
-      { error: err.message || 'Sunucu hatası oluştu.' },
+      { success: false, error: err.message || 'Sunucu hatası oluştu.' },
       { status: 500 }
     );
   }

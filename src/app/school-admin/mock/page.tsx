@@ -78,60 +78,79 @@ export default function MockExamPortal() {
   }, []);
 
   const initMockPortal = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      window.location.href = '/auth';
-      return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        window.location.href = '/auth';
+        return;
+      }
+
+      const { data: mems, error: memsError } = await supabase
+        .from('school_memberships')
+        .select('user_id, role')
+        .eq('role', 'teacher');
+
+      if (memsError) {
+        console.error('Error fetching memberships:', memsError);
+      }
+
+      if (mems) {
+        const techList = await Promise.all(mems.map(async (m) => {
+          const { data: prof } = await supabase.from('profiles').select('id, full_name, email').eq('id', m.user_id).single();
+          return prof;
+        }));
+        setTeachers(techList.filter(Boolean));
+      }
+    } catch (err) {
+      console.error('Init error:', err);
+    } finally {
+      setLoading(false);
     }
-
-    const { data: mems } = await supabase
-      .from('school_memberships')
-      .select('user_id, role')
-      .eq('role', 'teacher');
-
-    if (mems) {
-      const techList = await Promise.all(mems.map(async (m) => {
-        const { data: prof } = await supabase.from('profiles').select('id, full_name, email').eq('id', m.user_id).single();
-        return prof;
-      }));
-      setTeachers(techList.filter(Boolean));
-    }
-
-    setLoading(false);
   };
 
   const handleCreateExam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!examDate) return;
 
-    const dateObj = new Date(examDate);
-    const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+    try {
+      const dateObj = new Date(examDate);
+      const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
 
-    const newExam: MockExam = {
-      id: Math.random().toString(36).substring(2, 9),
-      subject,
-      exam_date: examDate,
-      exam_time: examTime,
-      day_of_week: dayName,
-      session_time: sessionTime,
-      target_class: targetClass,
-      invigilator_id: invigilatorId
-    };
+      const newExam: MockExam = {
+        id: Math.random().toString(36).substring(2, 9),
+        subject,
+        exam_date: examDate,
+        exam_time: examTime,
+        day_of_week: dayName,
+        session_time: sessionTime,
+        target_class: targetClass,
+        invigilator_id: invigilatorId
+      };
 
-    if (invigilatorId) {
-      await supabase.from('notifications').insert([
-        {
-          teacher_id: invigilatorId,
-          title: 'New Exam Invigilation Assignment',
-          message: `You have been assigned as an invigilator for "${subject}" on ${examDate} at ${examTime} (${sessionTime} session).`
+      if (invigilatorId) {
+        const { error: notifError } = await supabase.from('notifications').insert([
+          {
+            teacher_id: invigilatorId,
+            title: 'New Exam Invigilation Assignment',
+            message: `You have been assigned as an invigilator for "${subject}" on ${examDate} at ${examTime} (${sessionTime} session).`
+          }
+        ]);
+
+        if (notifError) {
+          console.error("Supabase Notification Error:", notifError);
+          alert(`Database Error (Notifications): ${notifError.message}`);
+          return;
         }
-      ]);
-    }
+      }
 
-    setExams([...exams, newExam]);
-    setExamDate('');
-    setExamTime('09:00');
-    setMsg('Mock exam successfully scheduled and notification sent to the proctor!');
+      setExams([...exams, newExam]);
+      setExamDate('');
+      setExamTime('09:00');
+      setMsg('Mock exam successfully scheduled and notification sent to the proctor!');
+    } catch (err: any) {
+      console.error("Unexpected Error during exam creation:", err);
+      alert(`Unexpected Error: ${err.message || err}`);
+    }
   };
 
   const handleDeleteExam = (id: string) => {
@@ -190,7 +209,7 @@ export default function MockExamPortal() {
           <p className="text-xs text-slate-300">Create examination timetables, assign proctors, and oversee official IB subject sessions.</p>
         </div>
 
-        {/* Sınav Oluşturma Formu (Exam Title Kaldırıldı, Ders Seçimi Eklendi) */}
+        {/* Sınav Oluşturma Formu */}
         <div className="p-6 bg-white border rounded-3xl shadow-sm space-y-4 print:hidden">
           <h3 className="font-bold text-sm text-slate-900">Schedule New Mock Examination</h3>
           <form onSubmit={handleCreateExam} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -89,6 +89,30 @@ export default function StudentDashboardPortal() {
       return;
     }
 
+    // GÜVENLİK KONTROLÜ: Kullanıcının rolü öğretmen veya koordinatörse kendi paneline yönlendir
+    const { data: membership } = await supabase
+      .from('school_memberships')
+      .select('role')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const { data: profRole } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const currentRole = membership?.role || profRole?.role;
+
+    if (currentRole === 'teacher') {
+      window.location.href = '/teacher';
+      return;
+    }
+    if (currentRole === 'coordinator') {
+      window.location.href = '/school-admin';
+      return;
+    }
+
     const defaultName = user.email?.split('@')[0] || 'Student User';
     
     const { data: prof } = await supabase

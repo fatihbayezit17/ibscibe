@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export default function AuthPage() {
@@ -9,12 +9,23 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Sayfa açıldığında eski oturum kalıntısı kalmasın diye temizleyelim
+  useEffect(() => {
+    const clearOldSession = async () => {
+      await supabase.auth.signOut();
+    };
+    clearOldSession();
+  }, []);
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg('');
 
     try {
+      // Yeni giriş denemesinden önce kesinlik olması için eski oturumu kapatalım
+      await supabase.auth.signOut();
+
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,

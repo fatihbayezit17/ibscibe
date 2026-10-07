@@ -9,15 +9,24 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { userId } = await request.json();
-
-    if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 });
     }
 
-    // 1. Önce Supabase Auth sisteminden kullanıcıyı tamamen silelim (oturum açamaz hale gelir)
+    const { userId } = body;
+
+    if (!userId) {
+      return NextResponse.json({ success: false, error: 'User ID is required' }, { status: 400 });
+    }
+
+    // 1. Önce Supabase Auth sisteminden kullanıcıyı tamamen silelim
     const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-    if (authError) throw authError;
+    if (authError) {
+      return NextResponse.json({ success: false, error: authError.message }, { status: 400 });
+    }
 
     // 2. Tablolardaki ilişkileri temizleyelim (school_memberships ve profiles)
     await supabaseAdmin.from('school_memberships').delete().eq('user_id', userId);
@@ -25,6 +34,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    // Beklenmeyen her türlü hatada kesinlikle HTML yerine JSON döner
+    return NextResponse.json(
+      { success: false, error: err.message || 'Internal Server Error' },
+      { status: 500 }
+    );
   }
 }
