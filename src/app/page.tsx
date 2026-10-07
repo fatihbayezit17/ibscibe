@@ -55,20 +55,20 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col font-sans relative overflow-hidden">
+      {/* Arka plan görseli netleştirildi ve opaklığı artırıldı */}
       <div className="absolute inset-0 z-0">
         <img 
           src="https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=2000&q=80" 
           alt="Campus Background" 
-          className="w-full h-full object-cover opacity-30"
+          className="w-full h-full object-cover opacity-65"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/70 via-slate-950/90 to-slate-950" />
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/40 via-slate-950/60 to-slate-950/95" />
       </div>
 
       {/* Üst Header */}
       <header className="border-b border-white/10 bg-slate-900/70 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           
-          {/* Gelişmiş Kurumsal Logo Entegre Edildi */}
           <div className="flex items-center space-x-3.5 group cursor-pointer" onClick={() => window.location.href = '/'}>
             <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-slate-900 via-slate-900 to-slate-800 border border-orange-500/40 flex items-center justify-center relative shadow-xl shadow-orange-500/10 group-hover:border-orange-500 transition-all">
               <div className="absolute inset-0 bg-gradient-to-tr from-orange-500/20 via-transparent to-amber-400/10 rounded-2xl" />
@@ -134,7 +134,6 @@ export default function LandingPage() {
         {/* İstatistik ve Metrik Bölümü */}
         <div className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6 pt-8 text-left">
           
-          {/* Grafik Kartı 1: Kriter Bazlı AI Doğruluk Analizi */}
           <div className="p-6 bg-slate-900/90 backdrop-blur-md border border-white/15 rounded-3xl space-y-4 shadow-2xl flex flex-col justify-between">
             <div>
               <div className="text-orange-400 font-mono text-[11px] font-bold uppercase tracking-widest">Metric 01 / Accuracy</div>
@@ -175,7 +174,6 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Grafik Kartı 2: Zaman Tasarrufu / Hız Karşılaştırması */}
           <div className="p-6 bg-slate-900/90 backdrop-blur-md border border-white/15 rounded-3xl space-y-4 shadow-2xl flex flex-col justify-between">
             <div>
               <div className="text-orange-400 font-mono text-[11px] font-bold uppercase tracking-widest">Metric 02 / Efficiency</div>
@@ -201,7 +199,6 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Grafik Kartı 3: Platform Ekosistem Dağılımı */}
           <div className="p-6 bg-slate-900/90 backdrop-blur-md border border-white/15 rounded-3xl space-y-4 shadow-2xl flex flex-col justify-between">
             <div>
               <div className="text-orange-400 font-mono text-[11px] font-bold uppercase tracking-widest">Metric 03 / Ecosystem</div>
@@ -227,7 +224,7 @@ export default function LandingPage() {
 
         </div>
 
-        {/* Klasik Özellik Kartları (Alt Kısım) */}
+        {/* Klasik Özellik Kartları */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8 w-full text-left">
           <div className="p-6 bg-slate-900/85 backdrop-blur-md border border-white/15 rounded-3xl space-y-2 shadow-2xl">
             <div className="text-orange-400 font-mono text-xs font-bold uppercase tracking-widest">01 / OCR Digitization</div>
