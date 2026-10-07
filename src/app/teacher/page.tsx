@@ -409,14 +409,13 @@ export default function TeacherPortal() {
     <div 
       className="min-h-screen bg-slate-100 text-slate-900 flex font-sans relative overflow-x-hidden"
       onClick={() => {
-        // Boş bir yere tıklandığında menü açık ise kapat
         if (sidebarOpen) {
-          // sidebar veya hamburger butonu haricinde bir yere tıklandığında kapatır
+          // sidebar kapama
         }
       }}
     >
       
-      {/* SOL MENÜ (SIDEBAR - Açılır Kapanır & Transparan) */}
+      {/* SOL MENÜ */}
       <aside 
         onClick={(e) => e.stopPropagation()}
         className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900/90 backdrop-blur-md text-white flex flex-col justify-between p-6 border-r border-slate-800/80 shadow-2xl transition-transform duration-300 ease-in-out ${
@@ -497,7 +496,7 @@ export default function TeacherPortal() {
         </div>
       </aside>
 
-      {/* SAĞ ANA İÇERİK ALANI */}
+      {/* SAĞ ANA İÇERİK */}
       <div 
         className="flex-1 flex flex-col min-w-0 transition-all duration-300"
         onClick={() => { if (sidebarOpen) setSidebarOpen(false); }}
@@ -514,13 +513,11 @@ export default function TeacherPortal() {
                   <span className="text-base font-black">☰</span>
                 </button>
               )}
-              {/* Sol üst başlık Teacher Portal yapıldı */}
               <h2 className="font-extrabold text-sm text-slate-900 uppercase tracking-wider">
                 Teacher Portal
               </h2>
             </div>
 
-            {/* BİLDİRİM ZİLİ */}
             <div className="relative" onClick={(e) => e.stopPropagation()}>
               <button 
                 onClick={markNotificationsAsRead}
@@ -576,7 +573,7 @@ export default function TeacherPortal() {
             <div className="absolute inset-0 z-0">
               <img 
                 src="https://images.unsplash.com/photo-1497633762265-9d179a990aa6?auto=format&fit=crop&w=2000&q=80" 
-                alt="Library and Books" 
+                alt="Library" 
                 className="w-full h-full object-cover opacity-45"
               />
               <div className="absolute inset-0 bg-gradient-to-r from-slate-950/80 via-slate-900/70 to-slate-950/80" />
@@ -946,38 +943,55 @@ export default function TeacherPortal() {
                         </div>
                       </div>
 
-                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col gap-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Criterion Highlight Palette:</span>
-                          <span className="text-[10px] text-slate-400 italic">Select text in the manuscript</span>
+                      {/* Paper 2 Kontrolü: Eğer Paper 2 sınavı ise metin/vurgulama yerine sade skor kartı göster */}
+                      {selectedSub.chosen_text_type?.toLowerCase().includes('paper 2') ? (
+                        <div className="p-8 bg-slate-50 border border-slate-200 rounded-2xl space-y-4 text-center">
+                          <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-2xl mx-auto flex items-center justify-center text-xl font-black">📊</div>
+                          <div>
+                            <h4 className="font-extrabold text-sm text-slate-900">Paper 2 Reading Exam Result</h4>
+                            <p className="text-xs text-slate-500 mt-1">Bu gönderim bir Paper 2 sınav otomatik değerlendirmesidir. Sistem skoru aşağıda özetlenmiştir.</p>
+                          </div>
+                          <div className="inline-block p-4 bg-white border rounded-2xl shadow-xs">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Automatic Exam Score</span>
+                            <span className="text-2xl font-black text-orange-600">{selectedSub.ai_score_a || 0} / 48</span>
+                          </div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          {CRITERION_COLORS.map(col => (
-                            <button
-                              key={col.key}
-                              type="button"
-                              onClick={() => setActiveHighlightColor(col.key)}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${col.bg} ${activeHighlightColor === col.key ? 'ring-2 ring-slate-900 shadow-xs scale-105' : 'opacity-80 hover:opacity-100'}`}
-                            >
-                              <span className="w-2.5 h-2.5 rounded-full bg-current inline-block" />
-                              {col.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                      ) : (
+                        <>
+                          <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col gap-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Criterion Highlight Palette:</span>
+                              <span className="text-[10px] text-slate-400 italic">Select text in the manuscript</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {CRITERION_COLORS.map(col => (
+                                <button
+                                  key={col.key}
+                                  type="button"
+                                  onClick={() => setActiveHighlightColor(col.key)}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${col.bg} ${activeHighlightColor === col.key ? 'ring-2 ring-slate-900 shadow-xs scale-105' : 'opacity-80 hover:opacity-100'}`}
+                                >
+                                  <span className="w-2.5 h-2.5 rounded-full bg-current inline-block" />
+                                  {col.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
 
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center text-xs font-bold text-slate-600">
-                          <span>Student Essay Manuscript</span>
-                          <span className="text-[11px] text-orange-600">💡 Select text to highlight &amp; add notes</span>
-                        </div>
-                        <div 
-                          onMouseUp={handleTextHighlightSelection}
-                          className="p-6 bg-amber-50/30 border border-slate-300 rounded-2xl font-serif text-sm leading-[2.4rem] text-slate-900 max-h-[450px] overflow-y-auto whitespace-pre-line shadow-inner select-text cursor-text"
-                        >
-                          {selectedSub.content}
-                        </div>
-                      </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                              <span>Student Essay Manuscript</span>
+                              <span className="text-[11px] text-orange-600">💡 Select text to highlight &amp; add notes</span>
+                            </div>
+                            <div 
+                              onMouseUp={handleTextHighlightSelection}
+                              className="p-6 bg-amber-50/30 border border-slate-300 rounded-2xl font-serif text-sm leading-[2.4rem] text-slate-900 max-h-[450px] overflow-y-auto whitespace-pre-line shadow-inner select-text cursor-text"
+                            >
+                              {selectedSub.content}
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     <div className="xl:col-span-5 p-6 bg-white border border-slate-200 rounded-3xl space-y-5 shadow-xl self-start">
