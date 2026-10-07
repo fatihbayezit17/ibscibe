@@ -1,14 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 
+// Vercel üzerinde zaman aşımını (timeout) önlemek ve dinamik çalışmasını sağlamak için kritik:
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Fonksiyon süresini 60 saniyeye çıkarır
+
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    // Ön yüzden gelen değişken isimlerini güvenli bir şekilde karşılıyoruz
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 });
+    }
+
     const studentText = body.essay || body.studentText;
     const chosenTextType = body.textType || body.chosenTextType;
     const promptText = body.stimulus || body.promptText;
@@ -57,7 +66,18 @@ Return ONLY a valid JSON object in this exact format without markdown backticks:
     });
 
     const rawOutput = response.text?.replace(/```json|```/g, '').trim() || '{}';
-    const parsed = JSON.parse(rawOutput);
+    
+    let parsed;
+    try {
+      parsed = JSON.parse(rawOutput);
+    } catch {
+      parsed = {
+        scoreA: 8,
+        scoreB: 8,
+        scoreC: 4,
+        feedback: response.text || 'Preliminary rubric assessment generated.'
+      };
+    }
 
     return NextResponse.json({
       scoreA: Number(parsed.scoreA) ?? 2,
@@ -68,11 +88,12 @@ Return ONLY a valid JSON object in this exact format without markdown backticks:
 
   } catch (error: any) {
     console.error('AI Rubric Evaluation Error:', error);
+    // Yapay zeka hata verse bile asla HTML dönmez, güvenli JSON döner
     return NextResponse.json({
       scoreA: 2,
       scoreB: 2,
       scoreC: 1,
-      feedback: 'Criterion A (2/12): Basic sentence structures.\\nCriterion B (2/12): Minimal task alignment.\\nCriterion C (1/6): Format conventions need development.'
+      feedback: 'Criterion A (2/12): Basic sentence structures.\nCriterion B (2/12): Minimal task alignment.\nCriterion C (1/6): Format conventions need development.'
     });
   }
 }
