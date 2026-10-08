@@ -8,6 +8,28 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
+// 503 geçici yoğunluk hatalarında otomatik tekrar deneme fonksiyonu
+async function generateWithRetry(prompt: string, retries = 3, delay = 2000): Promise<any> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash', // Kararlı ve hızlı flash modeli
+        contents: prompt,
+      });
+      return response;
+    } catch (error: any) {
+      const isOverloaded = error?.message?.includes('503') || error?.message?.includes('high demand') || error?.status === 503;
+      if (isOverloaded && i < retries - 1) {
+        console.warn(`Gemini 503 high demand encountered. Retrying in ${delay}ms (Attempt ${i + 1}/${retries})...`);
+        await new Promise(res => setTimeout(res, delay));
+        delay *= 2; // Katlanarak bekleme süresini artır
+      } else {
+        throw error;
+      }
+    }
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     let body;
@@ -61,11 +83,8 @@ Return ONLY a valid JSON object in this exact format without any markdown code b
   "feedback": "• Criterion A (Language - 8/12): Rationale here...\n• Criterion B (Message - 8/12): Rationale here...\n• Criterion C (Conventions & Text Type - 4/6): Checked title and format...\n\n🌟 STRENGTHS:\n- Strength 1\n\n⚠️ DEFICIENCIES & AREAS FOR IMPROVEMENT:\n- Gap 1\n\n💡 MODEL REWRITE / HOW IT COULD BE BETTER:\nExemplary text snippet here..."
 }`;
 
-    // Model adı güncellendi
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: evaluationPrompt,
-    });
+    // Otomatik deneme mekanizması ile çağrı
+    const response = await generateWithRetry(evaluationPrompt);
 
     const responseText = response.text || '';
     const cleanJson = responseText.replace(/```json|```/g, '').trim();
@@ -96,7 +115,7 @@ Return ONLY a valid JSON object in this exact format without any markdown code b
       scoreA: 5,
       scoreB: 5,
       scoreC: 2,
-      feedback: `AI Evaluation Error: ${error?.message || 'Unknown server error'}. Please verify GEMINI_API_KEY configuration.`
+      feedback: `AI Evaluation Error: ${error?.message || 'Server is experiencing high demand. Please try evaluating again in a few moments.'}`
     });
   }
 }
