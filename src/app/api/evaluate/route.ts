@@ -61,8 +61,9 @@ Return ONLY a valid JSON object in this exact format without any markdown code b
   "feedback": "• Criterion A (Language - 8/12): Rationale here...\n• Criterion B (Message - 8/12): Rationale here...\n• Criterion C (Conventions & Text Type - 4/6): Checked title and format...\n\n🌟 STRENGTHS:\n- Strength 1\n\n⚠️ DEFICIENCIES & AREAS FOR IMPROVEMENT:\n- Gap 1\n\n💡 MODEL REWRITE / HOW IT COULD BE BETTER:\nExemplary text snippet here..."
 }`;
 
+    // Model adı güncellendi
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
       contents: evaluationPrompt,
     });
 
