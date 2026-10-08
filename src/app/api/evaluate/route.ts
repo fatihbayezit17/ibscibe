@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 
-// Vercel üzerinde zaman aşımını (timeout) önlemek ve dinamik çalışmasını sağlamak için kritik:
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // Fonksiyon süresini 60 saniyeye çıkarır
+export const maxDuration = 60;
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -24,8 +23,8 @@ export async function POST(req: NextRequest) {
 
     if (!studentText || studentText.trim().length < 5) {
       return NextResponse.json({
-        scoreA: 1,
-        scoreB: 1,
+        scoreA: 2,
+        scoreB: 2,
         scoreC: 1,
         feedback: 'Insufficient candidate text provided to assess against IB criteria.'
       });
@@ -43,21 +42,23 @@ ${studentText}
 
 MARK SCHEME & RUBRICS:
 - Criterion A: Language (out of 12) -> Vocabulary range, grammatical accuracy, complex structures.
-- Criterion B: Message (out of 12) -> Relevance to stimulus, idea development, depth and clarity. (PENALTY: If off-topic, nonsense, or test gibberish, award maximum 1-3).
-- Criterion C: Conceptual Understanding / Conventions (out of 6) -> Adherence to text type conventions, register, tone, audience awareness.
+- Criterion B: Message (out of 12) -> Relevance to stimulus, idea development, depth and clarity.
+- Criterion C: Conceptual Understanding / Conventions (out of 6) -> Adherence to text type conventions, register, tone, audience awareness, formatting (e.g., presence of an appropriate title, suitable subheadings, opening/closing conventions required for "${chosenTextType}").
 
-CRITICAL INSTRUCTION:
-Your feedback MUST be well-structured into clear sections so the teacher understands your exact grading rationale:
-1. Criterion Breakdown (Language, Message, Conventions)
-2. Strengths (What the student did well)
-3. Areas for Improvement / Deficiencies (Grammar/vocab slips, task omissions, formatting errors)
+CRITICAL INSTRUCTIONS:
+1. Check if the candidate selected and adhered to the correct text type ("${chosenTextType}"). Check if an appropriate title and formatting conventions are used.
+2. Structure your feedback into:
+   - Criterion Breakdown (Language, Message, Conventions & Text Type check)
+   - Strengths
+   - Areas for Improvement / Deficiencies (Formatting, title, or task gaps)
+   - MODEL REWRITE / HOW IT COULD BE BETTER (Provide an exemplary rewritten excerpt demonstrating top-band IB standard).
 
-Return ONLY a valid JSON object in this exact format without markdown backticks:
+Return ONLY a valid JSON object in this exact format without any markdown code blocks or backticks:
 {
-  "scoreA": <number 0-12>,
-  "scoreB": <number 0-12>,
-  "scoreC": <number 0-6>,
-  "feedback": "• Criterion A (Language - X/12): [Rationale]\\n• Criterion B (Message - Y/12): [Rationale]\\n• Criterion C (Conventions - Z/6): [Rationale]\\n\\n🌟 STRENGTHS:\\n- [Specific praise]\\n\\n⚠️ DEFICIENCIES & AREAS FOR IMPROVEMENT:\\n- [Concrete gaps, why points were deducted]"
+  "scoreA": 8,
+  "scoreB": 8,
+  "scoreC": 4,
+  "feedback": "• Criterion A (Language - 8/12): Rationale here...\n• Criterion B (Message - 8/12): Rationale here...\n• Criterion C (Conventions & Text Type - 4/6): Checked title and format...\n\n🌟 STRENGTHS:\n- Strength 1\n\n⚠️ DEFICIENCIES & AREAS FOR IMPROVEMENT:\n- Gap 1\n\n💡 MODEL REWRITE / HOW IT COULD BE BETTER:\nExemplary text snippet here..."
 }`;
 
     const response = await ai.models.generateContent({
@@ -65,35 +66,36 @@ Return ONLY a valid JSON object in this exact format without markdown backticks:
       contents: evaluationPrompt,
     });
 
-    const rawOutput = response.text?.replace(/```json|```/g, '').trim() || '{}';
+    const responseText = response.text || '';
+    const cleanJson = responseText.replace(/```json|```/g, '').trim();
     
     let parsed;
     try {
-      parsed = JSON.parse(rawOutput);
-    } catch {
+      parsed = JSON.parse(cleanJson);
+    } catch (parseErr) {
+      console.error('JSON Parse Error. Raw response was:', responseText);
       parsed = {
-        scoreA: 8,
-        scoreB: 8,
-        scoreC: 4,
-        feedback: response.text || 'Preliminary rubric assessment generated.'
+        scoreA: 6,
+        scoreB: 6,
+        scoreC: 3,
+        feedback: responseText || 'Assessment generated.'
       };
     }
 
     return NextResponse.json({
-      scoreA: Number(parsed.scoreA) ?? 2,
-      scoreB: Number(parsed.scoreB) ?? 2,
-      scoreC: Number(parsed.scoreC) ?? 1,
-      feedback: parsed.feedback || 'Preliminary rubric assessment generated.'
+      scoreA: Number(parsed.scoreA) ?? 6,
+      scoreB: Number(parsed.scoreB) ?? 6,
+      scoreC: Number(parsed.scoreC) ?? 3,
+      feedback: parsed.feedback || 'Assessment generated.'
     });
 
   } catch (error: any) {
-    console.error('AI Rubric Evaluation Error:', error);
-    // Yapay zeka hata verse bile asla HTML dönmez, güvenli JSON döner
+    console.error('AI Rubric Evaluation Critical Error:', error?.message || error);
     return NextResponse.json({
-      scoreA: 2,
-      scoreB: 2,
-      scoreC: 1,
-      feedback: 'Criterion A (2/12): Basic sentence structures.\nCriterion B (2/12): Minimal task alignment.\nCriterion C (1/6): Format conventions need development.'
+      scoreA: 5,
+      scoreB: 5,
+      scoreC: 2,
+      feedback: `AI Evaluation Error: ${error?.message || 'Unknown server error'}. Please verify GEMINI_API_KEY configuration.`
     });
   }
 }
