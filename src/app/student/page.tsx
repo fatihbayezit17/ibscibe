@@ -114,7 +114,6 @@ export default function StudentDashboardPortal() {
     }
 
     const defaultName = user.email?.split('@')[0] || 'Student User';
-    
     const { data: prof } = await supabase
       .from('profiles')
       .update({ full_name: defaultName, email: user.email })
@@ -214,7 +213,6 @@ export default function StudentDashboardPortal() {
         .update({ is_read: true })
         .eq('teacher_id', data.profile.id)
         .eq('is_read', false);
-      
       setNotifications(notifications.map(n => ({ ...n, is_read: true })));
     }
   };
@@ -260,7 +258,6 @@ export default function StudentDashboardPortal() {
 
   const handleLeaveClass = async (classId: string) => {
     if (!confirm('Are you sure you want to leave this class?')) return;
-    
     const { error } = await supabase
       .from('class_members')
       .delete()
@@ -297,406 +294,447 @@ export default function StudentDashboardPortal() {
     setShowTasksModal(true);
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-600">Loading Student Portal...</div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-600 bg-slate-50">Loading Student Portal...</div>;
 
   const sub = data.latestSubmissionWithFeedback;
   const unreadNotifCount = notifications.filter(n => !n.is_read).length;
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
-      <header className="border-b bg-white sticky top-0 z-40 shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3 flex-wrap gap-y-2">
-            <div className="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-bold text-white shadow-sm">IB</div>
-            <span className="font-bold text-slate-900">IBDP Student Portal</span>
-            
-            {data.schoolName && (
-              <span className="text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
-                🏫 {data.schoolName}
-              </span>
-            )}
-
-            {data.enrolledClasses.map(c => (
-              <span key={c.id} className="text-xs px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-bold border border-emerald-200 flex items-center gap-1.5">
-                <span>✓ {c.class_name}</span>
-                <span className="text-[10px] font-mono bg-white px-1.5 py-0.2 rounded border text-slate-600">{c.join_code}</span>
-                <button onClick={() => handleLeaveClass(c.id)} className="text-rose-600 hover:text-rose-800 font-black cursor-pointer" title="Leave class">×</button>
-              </span>
-            ))}
-
-            {data.enrolledClasses.length === 0 && (
-              <form onSubmit={handleJoinClass} className="flex items-center gap-1.5">
-                <input 
-                  type="text" 
-                  placeholder="CLASS CODE (e.g. IB-1234)" 
-                  value={joinCode} 
-                  onChange={e => setJoinCode(e.target.value)} 
-                  className="px-2.5 py-1 border rounded-lg text-[11px] uppercase bg-slate-50 font-mono w-40" 
-                />
-                <button type="submit" className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg shadow-xs cursor-pointer">Join</button>
-              </form>
-            )}
-            {joinMsg && <span className="text-[11px] font-bold text-orange-600">{joinMsg}</span>}
+    <div className="min-h-screen bg-slate-100 text-slate-900 flex font-sans">
+      
+      {/* SOL SABİT MANAGEBAC TARZI SIDEBAR */}
+      <aside className="w-16 bg-slate-900 border-r border-slate-800 flex flex-col items-center py-4 justify-between shrink-0 sticky top-0 h-screen z-30">
+        <div className="space-y-6 flex flex-col items-center">
+          <div className="w-10 h-10 rounded-xl bg-orange-600 flex items-center justify-center font-black text-white shadow-md text-sm">
+            IB
           </div>
-
-          <div className="flex items-center space-x-3">
-            <span className="text-xs font-semibold text-slate-600 hidden sm:inline">{data.profile?.full_name}</span>
-
-            {/* ÖĞRENCİ BİLDİRİM ZİLİ */}
-            <div className="relative">
-              <button 
-                onClick={markNotificationsAsRead}
-                className="relative p-2.5 rounded-xl border bg-slate-50 hover:bg-slate-100 text-slate-700 transition-all cursor-pointer flex items-center justify-center"
-                title="Notifications"
-              >
-                🔔
-                {unreadNotifCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-600 text-white text-[9px] font-black rounded-full flex items-center justify-center animate-pulse">
-                    {unreadNotifCount}
-                  </span>
-                )}
-              </button>
-
-              {showNotifications && (
-                <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden">
-                  <div className="p-3 bg-slate-900 text-white font-bold text-xs flex justify-between items-center">
-                    <span>Notifications &amp; Exams</span>
-                    <span className="text-[10px] text-slate-300 font-mono">{notifications.length} total</span>
-                  </div>
-                  <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
-                    {notifications.length === 0 ? (
-                      <div className="p-6 text-center text-xs text-slate-400">No notifications yet.</div>
-                    ) : (
-                      notifications.map(n => (
-                        <div key={n.id} className={`p-3.5 space-y-1 text-xs relative group ${n.is_read ? 'bg-white' : 'bg-orange-50/50'}`}>
-                          <div className="flex items-center justify-between font-bold text-slate-900 pr-6">
-                            <span>{n.title}</span>
-                            {!n.is_read && <span className="w-2 h-2 rounded-full bg-orange-600" />}
-                          </div>
-                          <p className="text-slate-600 text-[11px] leading-relaxed pr-6">{n.message}</p>
-                          <span className="text-[9px] text-slate-400 block font-mono">{new Date(n.created_at).toLocaleString()}</span>
-                          
-                          {/* Bildirim Silme Tuşu (Çöp Tenekesi) */}
-                          <button 
-                            onClick={(e) => handleDeleteNotification(n.id, e)} 
-                            title="Delete notification"
-                            className="absolute top-3 right-3 text-slate-400 hover:text-rose-600 p-1 rounded-lg transition-all cursor-pointer"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <button 
-              onClick={async () => { await supabase.auth.signOut(); window.location.href = '/auth'; }} 
-              className="px-3 py-1.5 rounded-lg border text-xs bg-white text-rose-600 hover:bg-rose-50 font-bold shadow-xs cursor-pointer"
-            >
-              Sign Out
+          
+          <div className="space-y-3 pt-4 border-t border-slate-800 w-full flex flex-col items-center">
+            <button onClick={() => router.push('/student')} className="w-10 h-10 rounded-xl bg-slate-800 text-white flex items-center justify-center hover:bg-orange-600 transition-all cursor-pointer" title="Dashboard">
+              🏠
+            </button>
+            <button onClick={handleOpenTasks} className="w-10 h-10 rounded-xl bg-slate-800 text-slate-300 flex items-center justify-center hover:bg-orange-600 hover:text-white transition-all cursor-pointer relative" title="Assigned Tasks">
+              📚
+              {data.assignedTasks.length > 0 && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-orange-500 rounded-full" />}
+            </button>
+            <button onClick={() => router.push('/student/portfolio')} className="w-10 h-10 rounded-xl bg-slate-800 text-slate-300 flex items-center justify-center hover:bg-orange-600 hover:text-white transition-all cursor-pointer" title="Portfolio">
+              📁
             </button>
           </div>
         </div>
-      </header>
 
-      {/* Feedback Modal */}
-      {showFeedbackModal && sub && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center border-b pb-4">
-              <div>
-                <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs font-bold rounded-full border border-indigo-200">
-                  {sub.chosen_text_type?.startsWith('Paper 2') ? 'Paper 2 Reading Exam' : sub.chosen_text_type}
+        <div className="space-y-3 flex flex-col items-center">
+          <button 
+            onClick={async () => { await supabase.auth.signOut(); window.location.href = '/auth'; }} 
+            className="w-10 h-10 rounded-xl bg-slate-800 text-rose-400 flex items-center justify-center hover:bg-rose-600 hover:text-white transition-all cursor-pointer"
+            title="Sign Out"
+          >
+            🚪
+          </button>
+        </div>
+      </aside>
+
+      {/* ANA İÇERİK ALANI */}
+      <div className="flex-1 flex flex-col min-w-0">
+
+        {/* ÜST HEADER (Dinamik Gerçek Okul İsmiyle) */}
+        <header className="border-b bg-white sticky top-0 z-20 shadow-sm">
+          <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div className="flex items-center space-x-3 flex-wrap gap-y-2">
+              <div className="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-bold text-white shadow-sm">IB</div>
+              <span className="font-bold text-slate-900">IBDP Student Portal</span>
+              
+              {data.schoolName ? (
+                <span className="text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
+                  🏫 {data.schoolName}
                 </span>
-                <h3 className="text-lg font-black mt-1">
-                  {sub.chosen_text_type?.startsWith('Paper 2') ? 'Exam Result & Score Breakdown' : 'Teacher Feedback & Assessment'}
-                </h3>
-              </div>
-              <button onClick={() => setShowFeedbackModal(false)} className="px-3 py-1.5 bg-slate-100 rounded-xl text-xs font-bold cursor-pointer">Close ✕</button>
+              ) : (
+                <span className="text-xs px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 font-bold border border-slate-200">
+                  🏫 IBDP Academic Hub
+                </span>
+              )}
+
+              {data.enrolledClasses.map(c => (
+                <span key={c.id} className="text-xs px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-bold border border-emerald-200 flex items-center gap-1.5">
+                  <span>✓ {c.class_name}</span>
+                  <span className="text-[10px] font-mono bg-white px-1.5 py-0.2 rounded border text-slate-600">{c.join_code}</span>
+                  <button onClick={() => handleLeaveClass(c.id)} className="text-rose-600 hover:text-rose-800 font-black cursor-pointer" title="Leave class">×</button>
+                </span>
+              ))}
+
+              {data.enrolledClasses.length === 0 && (
+                <form onSubmit={handleJoinClass} className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    placeholder="CLASS CODE (e.g. IB-1234)"
+                    value={joinCode}
+                    onChange={e => setJoinCode(e.target.value)}
+                    className="px-2.5 py-1 border rounded-lg text-[11px] uppercase bg-slate-50 font-mono w-40"
+                  />
+                  <button type="submit" className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg shadow-xs cursor-pointer">Join</button>
+                </form>
+              )}
+              {joinMsg && <span className="text-[11px] font-bold text-orange-600">{joinMsg}</span>}
             </div>
 
-            {sub.chosen_text_type?.startsWith('Paper 2') ? (
-              <div className="space-y-4">
-                <div className="p-6 bg-indigo-50 border border-indigo-200 rounded-2xl flex justify-between items-center">
-                  <div>
-                    <span className="text-xs font-bold text-indigo-900 block">Total Exam Score</span>
-                    <span className="text-3xl font-black text-indigo-700">{sub.ai_score_a} / {sub.ai_score_b}</span>
+            <div className="flex items-center space-x-3">
+              <span className="text-xs font-semibold text-slate-600 hidden sm:inline">{data.profile?.full_name}</span>
+
+              {/* ÖĞRENCİ BİLDİRİM ZİLİ */}
+              <div className="relative">
+                <button
+                  onClick={markNotificationsAsRead}
+                  className="relative p-2.5 rounded-xl border bg-slate-50 hover:bg-slate-100 text-slate-700 transition-all cursor-pointer flex items-center justify-center"
+                  title="Notifications"
+                >
+                  🔔
+                  {unreadNotifCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-600 text-white text-[9px] font-black rounded-full flex items-center justify-center animate-pulse">
+                      {unreadNotifCount}
+                    </span>
+                  )}
+                </button>
+
+                {showNotifications && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                    <div className="p-3 bg-slate-900 text-white font-bold text-xs flex justify-between items-center">
+                      <span>Notifications &amp; Exams</span>
+                      <span className="text-[10px] text-slate-300 font-mono">{notifications.length} total</span>
+                    </div>
+                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                      {notifications.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-slate-400">No notifications yet.</div>
+                      ) : (
+                        notifications.map(n => (
+                          <div key={n.id} className={`p-3.5 space-y-1 text-xs relative group ${n.is_read ? 'bg-white' : 'bg-orange-50/50'}`}>
+                            <div className="flex items-center justify-between font-bold text-slate-900 pr-6">
+                              <span>{n.title}</span>
+                              {!n.is_read && <span className="w-2 h-2 rounded-full bg-orange-600" />}
+                            </div>
+                            <p className="text-slate-600 text-[11px] leading-relaxed pr-6">{n.message}</p>
+                            <span className="text-[9px] text-slate-400 block font-mono">{new Date(n.created_at).toLocaleString()}</span>
+                            <button
+                              onClick={(e) => handleDeleteNotification(n.id, e)}
+                              title="Delete notification"
+                              className="absolute top-3 right-3 text-slate-400 hover:text-rose-600 p-1 rounded-lg transition-all cursor-pointer"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-xs font-bold text-slate-600 block">Success Rate</span>
-                    <span className="text-3xl font-black text-slate-900">%{sub.ai_score_c}</span>
+                )}
+              </div>
+
+              <button
+                onClick={async () => { await supabase.auth.signOut(); window.location.href = '/auth'; }}
+                className="px-3 py-1.5 rounded-lg border text-xs bg-white text-rose-600 hover:bg-rose-50 font-bold shadow-xs cursor-pointer"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Feedback Modal */}
+        {showFeedbackModal && sub && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center border-b pb-4">
+                <div>
+                  <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs font-bold rounded-full border border-indigo-200">
+                    {sub.chosen_text_type?.startsWith('Paper 2') ? 'Paper 2 Reading Exam' : sub.chosen_text_type}
+                  </span>
+                  <h3 className="text-lg font-black mt-1">
+                    {sub.chosen_text_type?.startsWith('Paper 2') ? 'Exam Result & Score Breakdown' : 'Teacher Feedback & Assessment'}
+                  </h3>
+                </div>
+                <button onClick={() => setShowFeedbackModal(false)} className="px-3 py-1.5 bg-slate-100 rounded-xl text-xs font-bold cursor-pointer">Close ✕</button>
+              </div>
+
+              {sub.chosen_text_type?.startsWith('Paper 2') ? (
+                <div className="space-y-4">
+                  <div className="p-6 bg-indigo-50 border border-indigo-200 rounded-2xl flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-bold text-indigo-900 block">Total Exam Score</span>
+                      <span className="text-3xl font-black text-indigo-700">{sub.ai_score_a} / {sub.ai_score_b}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-bold text-slate-600 block">Success Rate</span>
+                      <span className="text-3xl font-black text-slate-900">%{sub.ai_score_c}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 text-xs font-medium text-slate-700">
+                    <p>Your Paper 2 reading comprehension exam has been successfully completed and recorded in your Master Portfolio archive.</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-orange-50 rounded-2xl border border-orange-200">
+                      <span className="block text-[11px] font-black text-orange-800 uppercase tracking-wider mb-1">🤖 AI Assessment</span>
+                      <div className="text-xs space-y-0.5 text-slate-700">
+                        <div>Crit A (Lang): <b>{sub.ai_score_a ?? '-'}/12</b></div>
+                        <div>Crit B (Msg): <b>{sub.ai_score_b ?? '-'}/12</b></div>
+                        <div>Crit C (Concept): <b>{sub.ai_score_c ?? '-'}/6</b></div>
+                        <div className="pt-1 font-black text-orange-900 border-t border-orange-200 mt-1">Total: {(sub.ai_score_a || 0) + (sub.ai_score_b || 0) + (sub.ai_score_c || 0)} / 30</div>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
+                      <span className="block text-[11px] font-black text-emerald-800 uppercase tracking-wider mb-1">👨‍🏫 Teacher Assessment</span>
+                      {sub.criterion_a_score !== null ? (
+                        <div className="text-xs space-y-0.5 text-slate-700">
+                          <div>Crit A (Lang): <b>{sub.criterion_a_score}/12</b></div>
+                          <div>Crit B (Msg): <b>{sub.criterion_b_score}/12</b></div>
+                          <div>Crit C (Concept): <b>{sub.criterion_c_score}/6</b></div>
+                          <div className="pt-1 font-black text-emerald-900 border-t border-emerald-200 mt-1">Total: {(sub.criterion_a_score || 0) + (sub.criterion_b_score || 0) + (sub.criterion_c_score || 0)} / 30</div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-amber-700 font-medium italic mt-2">Awaiting teacher evaluation and grading...</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {sub.teacher_feedback && (
+                    <div className="p-5 bg-emerald-500 text-white rounded-2xl shadow-md space-y-1.5">
+                      <div className="text-xs font-black uppercase tracking-wider">🔔 Teacher Feedback &amp; Guidance</div>
+                      <p className="text-xs whitespace-pre-line leading-relaxed font-medium">{sub.teacher_feedback}</p>
+                    </div>
+                  )}
+
+                  <div className="p-5 bg-slate-50 rounded-2xl whitespace-pre-line font-serif text-xs leading-relaxed max-h-48 overflow-y-auto border border-slate-200">
+                    {sub.content}
+                  </div>
+                </>
+              )}
+
+              <button onClick={() => setShowFeedbackModal(false)} className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl shadow-md cursor-pointer">Close Window</button>
+            </div>
+          </div>
+        )}
+
+        {/* Assigned Tasks Modal */}
+        {showTasksModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center border-b pb-4">
+                <div>
+                  <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs font-bold rounded-full border border-indigo-200">Teacher Assignments</span>
+                  <h3 className="text-lg font-black mt-1">Assigned Tasks &amp; Stimuli</h3>
+                </div>
+                <button onClick={() => setShowTasksModal(false)} className="px-3 py-1.5 bg-slate-100 rounded-xl text-xs font-bold cursor-pointer">Close ✕</button>
+              </div>
+
+              <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
+                {data.assignedTasks.map(task => (
+                  <div key={task.id} className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 flex flex-col justify-between">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-100 text-orange-800">{task.theme} ({task.level})</span>
+                        {task.deadline && <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">⏰ {new Date(task.deadline).toLocaleString()}</span>}
+                      </div>
+                      <h4 className="font-extrabold text-sm text-slate-900">{task.title}</h4>
+                      <p className="text-xs text-slate-600 leading-relaxed">{task.prompt}</p>
+                    </div>
+                    <div className="pt-3 border-t border-slate-200 flex justify-end">
+                      <button
+                        onClick={() => {
+                          setShowTasksModal(false);
+                          router.push('/student/paper1');
+                        }}
+                        className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm cursor-pointer transition-all"
+                      >
+                        Go to Paper 1 Exam Environment ➔
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button onClick={() => setShowTasksModal(false)} className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl shadow-md cursor-pointer">Close Window</button>
+            </div>
+          </div>
+        )}
+
+        {/* ANA İÇERİK (Orijinal Tasarım Düzeni + Sol Sidebar Entegrasyonu) */}
+        <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
+          <div className="relative rounded-3xl overflow-hidden shadow-md border border-slate-200 text-white p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-slate-900">
+            <div className="absolute inset-0 z-0">
+              <img
+                src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=2000&q=80"
+                alt=""
+                className="w-full h-full object-cover opacity-25 mix-blend-overlay"
+              />
+              <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-900/80 to-transparent" />
+            </div>
+
+            <div className="space-y-2 relative z-10">
+              <span className="text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 bg-orange-600/80 text-white rounded-lg font-bold border border-orange-500/30 backdrop-blur-sm">
+                Student Command Center
+              </span>
+              <h1 className="text-2xl md:text-3xl font-black text-white">Welcome back, {data.profile?.full_name}</h1>
+              <p className="text-xs text-slate-300 max-w-xl">Manage your classrooms, review teacher feedback, and access your IBDP exam modules below.</p>
+            </div>
+
+            <div className="flex items-center gap-3 relative z-10 shrink-0">
+              <div
+                onClick={handleOpenTasks}
+                className="p-4 bg-indigo-900/80 hover:bg-indigo-800/90 border border-indigo-500/30 backdrop-blur-md rounded-2xl text-center relative cursor-pointer transition-all shadow-md group min-w-[95px]"
+              >
+                {data.unreadTasksCount > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-indigo-400 rounded-full animate-ping" />}
+                <span className="text-[10px] font-mono uppercase text-indigo-200 font-bold block">Assigned Tasks</span>
+                <span className="text-xl font-black text-white group-hover:scale-105 transition-transform inline-block">{data.assignedTasks.length}</span>
+              </div>
+
+              <div className="p-4 bg-slate-800/80 border border-slate-700/50 backdrop-blur-md rounded-2xl text-center shadow-md min-w-[95px]">
+                <span className="text-[10px] font-mono uppercase text-slate-400 block">Submissions</span>
+                <span className="text-xl font-black text-white inline-block">{data.totalSubmissions}</span>
+              </div>
+
+              <div
+                onClick={handleOpenFeedback}
+                className="p-4 bg-orange-950/80 hover:bg-orange-900/80 border border-orange-500/30 backdrop-blur-md rounded-2xl text-center relative cursor-pointer transition-all shadow-md group min-w-[95px]"
+              >
+                {data.unreadCount > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full animate-ping" />}
+                <span className="text-[10px] font-mono uppercase text-orange-300 font-bold block">New Feedback</span>
+                <span className="text-xl font-black text-orange-400 group-hover:scale-105 transition-transform inline-block">{data.unreadCount}</span>
+              </div>
+
+              <Link
+                href="/student/portfolio"
+                className="p-4 bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/30 backdrop-blur-md rounded-2xl text-center cursor-pointer transition-all shadow-md group min-w-[95px] flex flex-col justify-center items-center h-[76px]"
+              >
+                <span className="text-[10px] font-mono uppercase text-rose-300 font-bold block">My</span>
+                <span className="text-xs font-black text-rose-200 group-hover:text-white transition-colors">Portfolio</span>
+              </Link>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+            <div
+              onClick={() => router.push('/student/paper1')}
+              className="p-8 bg-white border-2 border-slate-900 rounded-3xl shadow-lg cursor-pointer hover:border-orange-600 transition-all flex flex-col justify-between space-y-8 group relative overflow-hidden"
+            >
+              <div className="flex justify-between items-start border-b-2 border-slate-900 pb-6">
+                <div className="space-y-1 font-mono text-[11px] font-bold tracking-widest text-slate-600">
+                  <div>SPEC/2/ABENG/HP1/ENG/TZ0/XX</div>
+                  <div className="text-[10px] text-slate-400">EXAMINATION PAPER • PORTAL ACCESS</div>
+                </div>
+                <div className="w-12 h-12 rounded-full bg-slate-900 text-white flex items-center justify-center font-black tracking-tighter text-sm shadow-md">
+                  ib
+                </div>
+              </div>
+
+              <div className="space-y-3 font-serif">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">English B — Higher/Standard level — Paper 1</h3>
+                  <h4 className="text-xs font-semibold text-slate-600">Anglais B — Niveau supérieur / moyen — Épreuve 1</h4>
+                  <h4 className="text-xs font-semibold text-slate-600">Inglés B — Nivel superior / medio — Prueba 1</h4>
+                </div>
+
+                <div className="pt-2 text-xs font-sans text-slate-700 space-y-1 bg-slate-50 p-4 rounded-xl border">
+                  <p className="font-bold text-slate-900">Complete one task [30 marks / points]</p>
+                  <p className="font-medium text-slate-500">Time allowed: 1 hour 30 minutes</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                <span className="text-xs font-bold text-orange-600 group-hover:translate-x-1 transition-transform">Launch Paper 1 Exam Environment ➔</span>
+                <span className="px-3 py-1 bg-slate-900 text-white rounded-lg text-[10px] font-mono font-bold uppercase">Ready</span>
+              </div>
+            </div>
+
+            <div
+              onClick={() => router.push('/student/paper2')}
+              className="p-8 bg-white border-2 border-indigo-900 rounded-3xl shadow-lg cursor-pointer hover:border-orange-600 transition-all flex flex-col justify-between space-y-8 group relative overflow-hidden"
+            >
+              <div className="flex justify-between items-start border-b-2 border-indigo-900 pb-6">
+                <div className="space-y-1 font-mono text-[11px] font-bold tracking-widest text-indigo-700">
+                  <div>SPEC/2/ABENG/HP2/ENG/TZ0/XX</div>
+                  <div className="text-[10px] text-slate-400">EXAMINATION PAPER • PORTAL ACCESS</div>
+                </div>
+                <div className="w-12 h-12 rounded-full bg-indigo-900 text-white flex items-center justify-center font-black tracking-tighter text-sm shadow-md">
+                  ib
+                </div>
+              </div>
+
+              <div className="space-y-3 font-serif">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">English B — Higher/Standard level — Paper 2</h3>
+                  <h4 className="text-xs font-semibold text-slate-600">Compréhension écrite (Reading)</h4>
+                  <h4 className="text-xs font-semibold text-slate-600">Comprensión de lectura</h4>
+                </div>
+
+                <div className="pt-2 text-xs font-sans text-slate-700 space-y-1 bg-slate-50 p-4 rounded-xl border">
+                  <p className="font-bold text-slate-900">Reading comprehension [40 marks / points]</p>
+                  <p className="font-medium text-slate-500">Time allowed: 1 hour</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                <span className="text-xs font-bold text-orange-600 group-hover:translate-x-1 transition-transform">Launch Paper 2 Exam Environment ➔</span>
+                <span className="px-3 py-1 bg-indigo-900 text-white rounded-lg text-[10px] font-mono font-bold uppercase">Ready</span>
+              </div>
+            </div>
+
+            {data.hasEEAccess ? (
+              <div
+                onClick={() => router.push('/student/ee')}
+                className="p-8 bg-gradient-to-br from-indigo-900 to-slate-900 text-white rounded-3xl shadow-lg cursor-pointer hover:opacity-95 transition-all flex flex-col justify-between space-y-8 group"
+              >
+                <div className="flex justify-between items-start border-b border-white/20 pb-6">
+                  <div className="space-y-1 font-mono text-[11px] font-bold tracking-widest text-indigo-300">
+                    <div>IBDP/CORE/EE/2027/SESSION</div>
+                    <div className="text-[10px] text-indigo-400">EXTENDED ESSAY WORKSPACE</div>
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center font-black text-sm shadow-md">
+                    EE
                   </div>
                 </div>
 
-                <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 text-xs font-medium text-slate-700">
-                  <p>Your Paper 2 reading comprehension exam has been successfully completed and recorded in your Master Portfolio archive.</p>
+                <div className="space-y-3">
+                  <h3 className="text-2xl font-black tracking-tight font-serif">Extended Essay Research &amp; Draft Workspace</h3>
+                  <p className="text-xs text-slate-300 font-sans max-w-md">
+                    Access your Proposal, Title Page, RRS &amp; AI Prompt Log, 3 Mandatory Reflection Sessions (RPF), APA 7 Bibliography, and Draft PDF Export.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t border-white/10">
+                  <span className="text-xs font-bold text-indigo-300 group-hover:translate-x-1 transition-transform">Launch EE Workspace ➔</span>
+                  <span className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-mono font-bold uppercase">Active</span>
                 </div>
               </div>
             ) : (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-4 bg-orange-50 rounded-2xl border border-orange-200">
-                    <span className="block text-[11px] font-black text-orange-800 uppercase tracking-wider mb-1">🤖 AI Assessment</span>
-                    <div className="text-xs space-y-0.5 text-slate-700">
-                      <div>Crit A (Lang): <b>{sub.ai_score_a ?? '-'}/12</b></div>
-                      <div>Crit B (Msg): <b>{sub.ai_score_b ?? '-'}/12</b></div>
-                      <div>Crit C (Concept): <b>{sub.ai_score_c ?? '-'}/6</b></div>
-                      <div className="pt-1 font-black text-orange-900 border-t border-orange-200 mt-1">Total: {(sub.ai_score_a || 0) + (sub.ai_score_b || 0) + (sub.ai_score_c || 0)} / 30</div>
-                    </div>
+              <div className="p-8 bg-white border-2 border-dashed border-slate-300 rounded-3xl flex flex-col justify-between space-y-8 opacity-75">
+                <div className="flex justify-between items-start border-b border-slate-200 pb-6">
+                  <div className="space-y-1 font-mono text-[11px] font-bold tracking-widest text-slate-400">
+                    <div>IBDP/CORE/EE/LOCKED</div>
+                    <div className="text-[10px]">EXTENDED ESSAY WORKSPACE</div>
                   </div>
-
-                  <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
-                    <span className="block text-[11px] font-black text-emerald-800 uppercase tracking-wider mb-1">👨‍🏫 Teacher Assessment</span>
-                    {sub.criterion_a_score !== null ? (
-                      <div className="text-xs space-y-0.5 text-slate-700">
-                        <div>Crit A (Lang): <b>{sub.criterion_a_score}/12</b></div>
-                        <div>Crit B (Msg): <b>{sub.criterion_b_score}/12</b></div>
-                        <div>Crit C (Concept): <b>{sub.criterion_c_score}/6</b></div>
-                        <div className="pt-1 font-black text-emerald-900 border-t border-emerald-200 mt-1">Total: {(sub.criterion_a_score || 0) + (sub.criterion_b_score || 0) + (sub.criterion_c_score || 0)} / 30</div>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-amber-700 font-medium italic mt-2">Awaiting teacher evaluation and grading...</p>
-                    )}
+                  <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center font-black text-sm">
+                    🔒
                   </div>
                 </div>
 
-                {sub.teacher_feedback && (
-                  <div className="p-5 bg-emerald-500 text-white rounded-2xl shadow-md space-y-1.5">
-                    <div className="text-xs font-black uppercase tracking-wider">🔔 Teacher Feedback &amp; Guidance</div>
-                    <p className="text-xs whitespace-pre-line leading-relaxed font-medium">{sub.teacher_feedback}</p>
-                  </div>
-                )}
-
-                <div className="p-5 bg-slate-50 rounded-2xl whitespace-pre-line font-serif text-xs leading-relaxed max-h-48 overflow-y-auto border border-slate-200">
-                  {sub.content}
+                <div className="space-y-2">
+                  <h3 className="text-xl font-extrabold text-slate-800 font-serif">Extended Essay Workspace</h3>
+                  <p className="text-xs text-slate-500 font-sans max-w-md">
+                    Your Extended Essay workspace is currently locked. It will appear here automatically once your school coordinator assigns your EE subject and supervisor.
+                  </p>
                 </div>
-              </>
+
+                <div className="pt-4 border-t text-xs font-bold text-slate-400 italic font-sans">
+                  Awaiting coordinator assignment...
+                </div>
+              </div>
             )}
-
-            <button onClick={() => setShowFeedbackModal(false)} className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl shadow-md cursor-pointer">Close Window</button>
           </div>
-        </div>
-      )}
-
-      {/* Assigned Tasks Modal */}
-      {showTasksModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center border-b pb-4">
-              <div>
-                <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs font-bold rounded-full border border-indigo-200">Teacher Assignments</span>
-                <h3 className="text-lg font-black mt-1">Assigned Tasks &amp; Stimuli</h3>
-              </div>
-              <button onClick={() => setShowTasksModal(false)} className="px-3 py-1.5 bg-slate-100 rounded-xl text-xs font-bold cursor-pointer">Close ✕</button>
-            </div>
-
-            <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
-              {data.assignedTasks.map(task => (
-                <div key={task.id} className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 flex flex-col justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-100 text-orange-800">{task.theme} ({task.level})</span>
-                      {task.deadline && <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">⏰ {new Date(task.deadline).toLocaleString()}</span>}
-                    </div>
-                    <h4 className="font-extrabold text-sm text-slate-900">{task.title}</h4>
-                    <p className="text-xs text-slate-600 leading-relaxed">{task.prompt}</p>
-                  </div>
-                  <div className="pt-3 border-t border-slate-200 flex justify-end">
-                    <button
-                      onClick={() => {
-                        setShowTasksModal(false);
-                        router.push('/student/paper1');
-                      }}
-                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm cursor-pointer transition-all"
-                    >
-                      Go to Paper 1 Exam Environment ➔
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <button onClick={() => setShowTasksModal(false)} className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl shadow-md cursor-pointer">Close Window</button>
-          </div>
-        </div>
-      )}
-
-      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
-        <div className="relative rounded-3xl overflow-hidden shadow-md border border-slate-200 text-white p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-slate-900">
-          <div className="absolute inset-0 z-0">
-            <img 
-              src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=2000&q=80" 
-              alt="" 
-              className="w-full h-full object-cover opacity-25 mix-blend-overlay"
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-900/80 to-transparent" />
-          </div>
-
-          <div className="space-y-2 relative z-10">
-            <span className="text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 bg-orange-600/80 text-white rounded-lg font-bold border border-orange-500/30 backdrop-blur-sm">
-              Student Command Center
-            </span>
-            <h1 className="text-2xl md:text-3xl font-black text-white">Welcome back, {data.profile?.full_name}</h1>
-            <p className="text-xs text-slate-300 max-w-xl">Manage your classrooms, review teacher feedback, and access your IBDP exam modules below.</p>
-          </div>
-
-          <div className="flex items-center gap-3 relative z-10 shrink-0">
-            <div 
-              onClick={handleOpenTasks}
-              className="p-4 bg-indigo-900/80 hover:bg-indigo-800/90 border border-indigo-500/30 backdrop-blur-md rounded-2xl text-center relative cursor-pointer transition-all shadow-md group min-w-[95px]"
-            >
-              {data.unreadTasksCount > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-indigo-400 rounded-full animate-ping" />}
-              <span className="text-[10px] font-mono uppercase text-indigo-200 font-bold block">Assigned Tasks</span>
-              <span className="text-xl font-black text-white group-hover:scale-105 transition-transform inline-block">{data.assignedTasks.length}</span>
-            </div>
-
-            <div className="p-4 bg-slate-800/80 border border-slate-700/50 backdrop-blur-md rounded-2xl text-center shadow-md min-w-[95px]">
-              <span className="text-[10px] font-mono uppercase text-slate-400 block">Submissions</span>
-              <span className="text-xl font-black text-white inline-block">{data.totalSubmissions}</span>
-            </div>
-
-            <div 
-              onClick={handleOpenFeedback}
-              className="p-4 bg-orange-950/80 hover:bg-orange-900/80 border border-orange-500/30 backdrop-blur-md rounded-2xl text-center relative cursor-pointer transition-all shadow-md group min-w-[95px]"
-            >
-              {data.unreadCount > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full animate-ping" />}
-              <span className="text-[10px] font-mono uppercase text-orange-300 font-bold block">New Feedback</span>
-              <span className="text-xl font-black text-orange-400 group-hover:scale-105 transition-transform inline-block">{data.unreadCount}</span>
-            </div>
-
-            <Link 
-              href="/student/portfolio"
-              className="p-4 bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/30 backdrop-blur-md rounded-2xl text-center cursor-pointer transition-all shadow-md group min-w-[95px] flex flex-col justify-center items-center h-[76px]"
-            >
-              <span className="text-[10px] font-mono uppercase text-rose-300 font-bold block">My</span>
-              <span className="text-xs font-black text-rose-200 group-hover:text-white transition-colors">Portfolio</span>
-            </Link>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
-          <div 
-            onClick={() => router.push('/student/paper1')}
-            className="p-8 bg-white border-2 border-slate-900 rounded-3xl shadow-lg cursor-pointer hover:border-orange-600 transition-all flex flex-col justify-between space-y-8 group relative overflow-hidden"
-          >
-            <div className="flex justify-between items-start border-b-2 border-slate-900 pb-6">
-              <div className="space-y-1 font-mono text-[11px] font-bold tracking-widest text-slate-600">
-                <div>SPEC/2/ABENG/HP1/ENG/TZ0/XX</div>
-                <div className="text-[10px] text-slate-400">EXAMINATION PAPER • PORTAL ACCESS</div>
-              </div>
-              <div className="w-12 h-12 rounded-full bg-slate-900 text-white flex items-center justify-center font-black tracking-tighter text-sm shadow-md">
-                ib
-              </div>
-            </div>
-
-            <div className="space-y-3 font-serif">
-              <div>
-                <h3 className="text-lg font-black text-slate-900">English B — Higher/Standard level — Paper 1</h3>
-                <h4 className="text-xs font-semibold text-slate-600">Anglais B — Niveau supérieur / moyen — Épreuve 1</h4>
-                <h4 className="text-xs font-semibold text-slate-600">Inglés B — Nivel superior / medio — Prueba 1</h4>
-              </div>
-
-              <div className="pt-2 text-xs font-sans text-slate-700 space-y-1 bg-slate-50 p-4 rounded-xl border">
-                <p className="font-bold text-slate-900">• Complete one task [30 marks / points]</p>
-                <p className="font-medium text-slate-500">• Time allowed: 1 hour 30 minutes</p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-              <span className="text-xs font-bold text-orange-600 group-hover:translate-x-1 transition-transform">Launch Paper 1 Exam Environment ➔</span>
-              <span className="px-3 py-1 bg-slate-900 text-white rounded-lg text-[10px] font-mono font-bold uppercase">Ready</span>
-            </div>
-          </div>
-
-          <div 
-            onClick={() => router.push('/student/paper2')}
-            className="p-8 bg-white border-2 border-indigo-900 rounded-3xl shadow-lg cursor-pointer hover:border-orange-600 transition-all flex flex-col justify-between space-y-8 group relative overflow-hidden"
-          >
-            <div className="flex justify-between items-start border-b-2 border-indigo-900 pb-6">
-              <div className="space-y-1 font-mono text-[11px] font-bold tracking-widest text-indigo-700">
-                <div>SPEC/2/ABENG/HP2/ENG/TZ0/XX</div>
-                <div className="text-[10px] text-slate-400">EXAMINATION PAPER • PORTAL ACCESS</div>
-              </div>
-              <div className="w-12 h-12 rounded-full bg-indigo-900 text-white flex items-center justify-center font-black tracking-tighter text-sm shadow-md">
-                ib
-              </div>
-            </div>
-
-            <div className="space-y-3 font-serif">
-              <div>
-                <h3 className="text-lg font-black text-slate-900">English B — Higher/Standard level — Paper 2</h3>
-                <h4 className="text-xs font-semibold text-slate-600">Compréhension écrite (Reading)</h4>
-                <h4 className="text-xs font-semibold text-slate-600">Comprensión de lectura</h4>
-              </div>
-
-              <div className="pt-2 text-xs font-sans text-slate-700 space-y-1 bg-slate-50 p-4 rounded-xl border">
-                <p className="font-bold text-slate-900">• Reading comprehension [40 marks / points]</p>
-                <p className="font-medium text-slate-500">• Time allowed: 1 hour</p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-              <span className="text-xs font-bold text-orange-600 group-hover:translate-x-1 transition-transform">Launch Paper 2 Exam Environment ➔</span>
-              <span className="px-3 py-1 bg-indigo-900 text-white rounded-lg text-[10px] font-mono font-bold uppercase">Ready</span>
-            </div>
-          </div>
-
-          {data.hasEEAccess ? (
-            <div 
-              onClick={() => router.push('/student/ee')}
-              className="p-8 bg-gradient-to-br from-indigo-900 to-slate-900 text-white rounded-3xl shadow-lg cursor-pointer hover:opacity-95 transition-all flex flex-col justify-between space-y-8 group"
-            >
-              <div className="flex justify-between items-start border-b border-white/20 pb-6">
-                <div className="space-y-1 font-mono text-[11px] font-bold tracking-widest text-indigo-300">
-                  <div>IBDP/CORE/EE/2027/SESSION</div>
-                  <div className="text-[10px] text-indigo-400">EXTENDED ESSAY WORKSPACE</div>
-                </div>
-                <div className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center font-black text-sm shadow-md">
-                  EE
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <h3 className="text-2xl font-black tracking-tight font-serif">Extended Essay Research &amp; Draft Workspace</h3>
-                <p className="text-xs text-slate-300 font-sans max-w-md">
-                  Access your Proposal, Title Page, RRS &amp; AI Prompt Log, 3 Mandatory Reflection Sessions (RPF), APA 7 Bibliography, and Draft PDF Export.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between pt-4 border-t border-white/10">
-                <span className="text-xs font-bold text-indigo-300 group-hover:translate-x-1 transition-transform">Launch EE Workspace ➔</span>
-                <span className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-mono font-bold uppercase">Active</span>
-              </div>
-            </div>
-          ) : (
-            <div className="p-8 bg-white border-2 border-dashed border-slate-300 rounded-3xl flex flex-col justify-between space-y-8 opacity-75">
-              <div className="flex justify-between items-start border-b border-slate-200 pb-6">
-                <div className="space-y-1 font-mono text-[11px] font-bold tracking-widest text-slate-400">
-                  <div>IBDP/CORE/EE/LOCKED</div>
-                  <div className="text-[10px]">EXTENDED ESSAY WORKSPACE</div>
-                </div>
-                <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center font-black text-sm">
-                  🔒
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <h3 className="text-xl font-extrabold text-slate-800 font-serif">Extended Essay Workspace</h3>
-                <p className="text-xs text-slate-500 font-sans max-w-md">
-                  Your Extended Essay workspace is currently locked. It will appear here automatically once your school coordinator assigns your EE subject and supervisor.
-                </p>
-              </div>
-
-              <div className="pt-4 border-t text-xs font-bold text-slate-400 italic font-sans">
-                Awaiting coordinator assignment...
-              </div>
-            </div>
-          )}
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
